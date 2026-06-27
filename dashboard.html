@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Model eval dashboard</title>
+<style>
+  :root{
+    --bg:#0E1217; --panel:#161C24; --panel2:#1C242E; --line:#28323E;
+    --txt:#E6EBF0; --dim:#8A97A6; --faint:#5A6675;
+    --cyan:#4DD2C4; --amber:#E0A458; --violet:#8B9BF0;
+    --good:#6BD08B; --bad:#E0728A;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace;
+    --sans:ui-sans-serif,system-ui,"Inter",-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--sans);
+       line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px;margin:0 auto;padding:32px 22px 64px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.22em;
+           text-transform:uppercase;color:var(--cyan);margin:0 0 8px}
+  h1{font-size:30px;font-weight:650;margin:0 0 6px;letter-spacing:-.01em}
+  .meta{font-family:var(--mono);font-size:12.5px;color:var(--dim);margin:0}
+  .meta b{color:var(--txt);font-weight:500}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:26px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+         padding:18px 18px 20px;animation:rise .4s ease both}
+  .panel.full{grid-column:1 / -1}
+  .plabel{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;
+          text-transform:uppercase;color:var(--faint);margin:0 0 14px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+     color:var(--dim);text-align:right;font-weight:500;padding:0 0 9px;border-bottom:1px solid var(--line)}
+  th.l,td.l{text-align:left}
+  td{padding:10px 0;border-bottom:1px solid var(--panel2);font-family:var(--mono)}
+  tr:last-child td{border-bottom:none}
+  .model-name{color:var(--txt);font-weight:500}
+  .preset{color:var(--faint);font-size:11px}
+  .best{color:var(--cyan)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:8px;vertical-align:middle}
+  svg{display:block;width:100%;height:auto;overflow:visible}
+  .ax{stroke:var(--line);stroke-width:1}
+  .grid-l{stroke:var(--panel2);stroke-width:1}
+  .axlab{fill:var(--dim);font-family:var(--mono);font-size:10px}
+  .axtitle{fill:var(--faint);font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase}
+  .ptlab{fill:var(--txt);font-family:var(--mono);font-size:11px}
+  .frontier{stroke:var(--cyan);stroke-width:1.4;stroke-dasharray:4 4;fill:none;opacity:.7}
+  .bar{fill:var(--violet)}
+  .barbg{fill:var(--panel2)}
+  .barval{fill:var(--txt);font-family:var(--mono);font-size:11px}
+  .barname{fill:var(--dim);font-family:var(--mono);font-size:11px}
+  select{font-family:var(--mono);font-size:13px;background:var(--panel2);color:var(--txt);
+         border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%;margin-bottom:14px}
+  .insp-q{font-size:14px;color:var(--txt);margin:2px 0 14px;padding:10px 12px;
+          background:var(--panel2);border-radius:8px;border:1px solid var(--line)}
+  .insp-q .exp{font-family:var(--mono);color:var(--cyan);font-size:12px}
+  .ans{display:flex;align-items:center;justify-content:space-between;gap:12px;
+       padding:9px 0;border-bottom:1px solid var(--panel2);font-family:var(--mono);font-size:13px}
+  .ans:last-child{border-bottom:none}
+  .ans .m{color:var(--dim)}
+  .ans .v{display:flex;align-items:center;gap:9px}
+  .mark{font-weight:700}
+  .ok{color:var(--good)} .no{color:var(--bad)}
+  .note{font-family:var(--mono);font-size:11px;color:var(--faint);margin:22px 0 0;
+        padding-top:16px;border-top:1px solid var(--line)}
+  @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.panel{animation:none}}
+  @media (max-width:720px){.grid{grid-template-columns:1fr}h1{font-size:24px}}
+  :focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">Local dry-run · mock endpoints</p>
+  <h1>Model eval dashboard</h1>
+  <p class="meta" id="meta"></p>
+
+  <div class="grid">
+    <div class="panel full" style="animation-delay:.02s">
+      <p class="plabel">Leaderboard</p>
+      <table id="board"></table>
+    </div>
+
+    <div class="panel" style="animation-delay:.06s">
+      <p class="plabel">Quality vs cost — what's worth it</p>
+      <div id="scatter"></div>
+    </div>
+
+    <div class="panel" style="animation-delay:.08s">
+      <p class="plabel">Mean latency</p>
+      <div id="latency"></div>
+    </div>
+
+    <div class="panel full" style="animation-delay:.1s">
+      <p class="plabel">Sample inspector</p>
+      <select id="picker" aria-label="Choose a task"></select>
+      <div class="insp-q" id="iq"></div>
+      <div id="ians"></div>
+    </div>
+  </div>
+
+  <p class="note">Mock data from a local dry-run. To go live, point the client at your
+  Nebius vLLM endpoint URLs — the scoring, cost math, and this view stay identical.</p>
+</div>
+
+<script type="application/json" id="data">{"meta": {"mode": "local-dry-run", "n_models": 3, "n_tasks": 12, "benchmark": "mini-qa (exact match)"}, "leaderboard": [{"model": "qwen2.5-1.5b-instruct", "preset": "gpu-l40s-a / 1gpu-8vcpu-32gb", "accuracy": 0.9167, "correct": 11, "n": 12, "mean_latency_s": 0.481, "p95_latency_s": 0.592, "cost_per_1k_tokens_usd": 0.01509, "total_run_cost_usd": 0.00249}, {"model": "llama-3.2-3b-instruct", "preset": "gpu-l40s-a / 1gpu-8vcpu-32gb", "accuracy": 0.9167, "correct": 11, "n": 12, "mean_latency_s": 1.097, "p95_latency_s": 1.219, "cost_per_1k_tokens_usd": 0.0354, "total_run_cost_usd": 0.00567}, {"model": "qwen2.5-0.5b-instruct", "preset": "gpu-l40s-a / 1gpu-8vcpu-32gb", "accuracy": 0.5, "correct": 6, "n": 12, "mean_latency_s": 0.231, "p95_latency_s": 0.275, "cost_per_1k_tokens_usd": 0.00771, "total_run_cost_usd": 0.00119}], "samples": [{"q": "What is 13 + 29?", "expected": "42", "answers": {"qwen2.5-0.5b-instruct": {"text": "41", "correct": false, "latency_s": 0.242}, "qwen2.5-1.5b-instruct": {"text": "42", "correct": true, "latency_s": 0.327}, "llama-3.2-3b-instruct": {"text": "42", "correct": true, "latency_s": 0.951}}}, {"q": "What is 7 * 8?", "expected": "56", "answers": {"qwen2.5-0.5b-instruct": {"text": "54", "correct": false, "latency_s": 0.211}, "qwen2.5-1.5b-instruct": {"text": "56", "correct": true, "latency_s": 0.41}, "llama-3.2-3b-instruct": {"text": "56", "correct": true, "latency_s": 1.2}}}, {"q": "What is the capital of France?", "expected": "Paris", "answers": {"qwen2.5-0.5b-instruct": {"text": "Lyon", "correct": false, "latency_s": 0.21}, "qwen2.5-1.5b-instruct": {"text": "Paris", "correct": true, "latency_s": 0.428}, "llama-3.2-3b-instruct": {"text": "Paris", "correct": true, "latency_s": 1.124}}}, {"q": "How many sides does a hexagon have?", "expected": "6", "answers": {"qwen2.5-0.5b-instruct": {"text": "6", "correct": true, "latency_s": 0.161}, "qwen2.5-1.5b-instruct": {"text": "6", "correct": true, "latency_s": 0.672}, "llama-3.2-3b-instruct": {"text": "6", "correct": true, "latency_s": 1.094}}}, {"q": "What is 144 / 12?", "expected": "12", "answers": {"qwen2.5-0.5b-instruct": {"text": "14", "correct": false, "latency_s": 0.211}, "qwen2.5-1.5b-instruct": {"text": "12", "correct": true, "latency_s": 0.436}, "llama-3.2-3b-instruct": {"text": "12", "correct": true, "latency_s": 0.984}}}, {"q": "Extract the year: 'Released in 1994.'", "expected": "1994", "answers": {"qwen2.5-0.5b-instruct": {"text": "1949", "correct": false, "latency_s": 0.246}, "qwen2.5-1.5b-instruct": {"text": "1994", "correct": true, "latency_s": 0.506}, "llama-3.2-3b-instruct": {"text": "1994", "correct": true, "latency_s": 0.958}}}, {"q": "What color is a clear daytime sky?", "expected": "blue", "answers": {"qwen2.5-0.5b-instruct": {"text": "blue", "correct": true, "latency_s": 0.18}, "qwen2.5-1.5b-instruct": {"text": "blue", "correct": true, "latency_s": 0.592}, "llama-3.2-3b-instruct": {"text": "blue", "correct": true, "latency_s": 0.979}}}, {"q": "What is 100 - 37?", "expected": "63", "answers": {"qwen2.5-0.5b-instruct": {"text": "63", "correct": true, "latency_s": 0.249}, "qwen2.5-1.5b-instruct": {"text": "73", "correct": false, "latency_s": 0.533}, "llama-3.2-3b-instruct": {"text": "63", "correct": true, "latency_s": 1.158}}}, {"q": "What is the plural of 'mouse'?", "expected": "mice", "answers": {"qwen2.5-0.5b-instruct": {"text": "mouses", "correct": false, "latency_s": 0.275}, "qwen2.5-1.5b-instruct": {"text": "mice", "correct": true, "latency_s": 0.554}, "llama-3.2-3b-instruct": {"text": "mice", "correct": true, "latency_s": 1.144}}}, {"q": "What is 2 to the power of 5?", "expected": "32", "answers": {"qwen2.5-0.5b-instruct": {"text": "32", "correct": true, "latency_s": 0.24}, "qwen2.5-1.5b-instruct": {"text": "32", "correct": true, "latency_s": 0.398}, "llama-3.2-3b-instruct": {"text": "32", "correct": true, "latency_s": 1.233}}}, {"q": "Chemical symbol for gold?", "expected": "Au", "answers": {"qwen2.5-0.5b-instruct": {"text": "Au", "correct": true, "latency_s": 0.315}, "qwen2.5-1.5b-instruct": {"text": "Au", "correct": true, "latency_s": 0.431}, "llama-3.2-3b-instruct": {"text": "Go", "correct": false, "latency_s": 1.219}}}, {"q": "What is 15% of 200?", "expected": "30", "answers": {"qwen2.5-0.5b-instruct": {"text": "30", "correct": true, "latency_s": 0.236}, "qwen2.5-1.5b-instruct": {"text": "30", "correct": true, "latency_s": 0.492}, "llama-3.2-3b-instruct": {"text": "30", "correct": true, "latency_s": 1.117}}}]}</script>
+<script>
+const D = JSON.parse(document.getElementById("data").textContent);
+const COLORS = ["#4DD2C4","#8B9BF0","#E0A458"];
+const colorFor = (i)=>COLORS[i % COLORS.length];
+
+// meta
+document.getElementById("meta").innerHTML =
+  `<b>${D.meta.n_models}</b> endpoints · <b>${D.meta.n_tasks}</b> tasks · `+
+  `benchmark <b>${D.meta.benchmark}</b> · mode <b>${D.meta.mode}</b>`;
+
+// leaderboard
+const lb = D.leaderboard;
+const bestAcc = Math.max(...lb.map(r=>r.accuracy));
+const bestLat = Math.min(...lb.map(r=>r.mean_latency_s));
+const bestCost = Math.min(...lb.map(r=>r.cost_per_1k_tokens_usd));
+const modelIndex = {};
+lb.forEach((r,i)=>modelIndex[r.model]=i);
+const board = document.getElementById("board");
+board.innerHTML =
+  `<tr><th class="l">Model</th><th>Accuracy</th><th>Mean lat</th>
+   <th>p95 lat</th><th>$ / 1k tok</th><th>Run cost</th></tr>` +
+  lb.map((r)=>{
+    const ci = modelIndex[r.model];
+    return `<tr>
+      <td class="l"><span class="dot" style="background:${colorFor(ci)}"></span>
+        <span class="model-name">${r.model}</span><br>
+        <span class="preset" style="margin-left:16px">${r.preset}</span></td>
+      <td class="${r.accuracy===bestAcc?'best':''}">${(r.accuracy*100).toFixed(0)}%</td>
+      <td class="${r.mean_latency_s===bestLat?'best':''}">${r.mean_latency_s.toFixed(2)}s</td>
+      <td>${r.p95_latency_s.toFixed(2)}s</td>
+      <td class="${r.cost_per_1k_tokens_usd===bestCost?'best':''}">$${r.cost_per_1k_tokens_usd.toFixed(4)}</td>
+      <td>$${r.total_run_cost_usd.toFixed(4)}</td>
+    </tr>`;
+  }).join("");
+
+// scatter: x = cost/1k, y = accuracy
+(function(){
+  const W=520,H=320,m={t:18,r:60,b:46,l:46};
+  const pts = lb.map(r=>({x:r.cost_per_1k_tokens_usd, y:r.accuracy,
+                          label:r.model.replace("-instruct",""), i:modelIndex[r.model]}));
+  const xs=pts.map(p=>p.x), ys=pts.map(p=>p.y);
+  const xmin=Math.min(...xs)*0.85, xmax=Math.max(...xs)*1.1;
+  const ymin=Math.max(0,Math.min(...ys)-0.15), ymax=1.0;
+  const X=v=>m.l+(v-xmin)/(xmax-xmin)*(W-m.l-m.r);
+  const Y=v=>H-m.b-(v-ymin)/(ymax-ymin)*(H-m.t-m.b);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Quality versus cost scatter">`;
+  // gridlines + y ticks
+  for(let k=0;k<=4;k++){
+    const yv=ymin+(ymax-ymin)*k/4, y=Y(yv);
+    s+=`<line class="grid-l" x1="${m.l}" y1="${y}" x2="${W-m.r}" y2="${y}"/>`;
+    s+=`<text class="axlab" x="${m.l-8}" y="${y+3}" text-anchor="end">${(yv*100).toFixed(0)}%</text>`;
+  }
+  // x ticks
+  for(let k=0;k<=3;k++){
+    const xv=xmin+(xmax-xmin)*k/3, x=X(xv);
+    s+=`<text class="axlab" x="${x}" y="${H-m.b+16}" text-anchor="middle">$${xv.toFixed(4)}</text>`;
+  }
+  s+=`<line class="ax" x1="${m.l}" y1="${H-m.b}" x2="${W-m.r}" y2="${H-m.b}"/>`;
+  s+=`<line class="ax" x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${H-m.b}"/>`;
+  s+=`<text class="axtitle" x="${(m.l+W-m.r)/2}" y="${H-6}" text-anchor="middle">cost / 1k tokens</text>`;
+  s+=`<text class="axtitle" transform="translate(13,${(m.t+H-m.b)/2}) rotate(-90)" text-anchor="middle">accuracy</text>`;
+  // frontier: non-dominated points (low cost & high accuracy), sorted by cost
+  const sorted=[...pts].sort((a,b)=>a.x-b.x);
+  const front=[]; let bestY=-1;
+  for(const p of sorted){ if(p.y>bestY){front.push(p); bestY=p.y;} }
+  if(front.length>1){
+    s+=`<polyline class="frontier" points="${front.map(p=>`${X(p.x)},${Y(p.y)}`).join(" ")}"/>`;
+  }
+  // points
+  for(const p of pts){
+    s+=`<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="6.5" fill="${colorFor(p.i)}" stroke="#0E1217" stroke-width="1.5"/>`;
+    const anchor = X(p.x)>W-m.r-90 ? "end" : "start";
+    const dx = anchor==="end" ? -11 : 11;
+    s+=`<text class="ptlab" x="${X(p.x)+dx}" y="${Y(p.y)+4}" text-anchor="${anchor}">${p.label}</text>`;
+  }
+  s+="</svg>";
+  document.getElementById("scatter").innerHTML=s;
+})();
+
+// latency bars
+(function(){
+  const rows=[...lb].sort((a,b)=>a.mean_latency_s-b.mean_latency_s);
+  const W=460,rowH=46,H=rows.length*rowH+10,m={l:8,r:8};
+  const max=Math.max(...rows.map(r=>r.mean_latency_s))*1.15;
+  const barW=W-150;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Mean latency bars">`;
+  rows.forEach((r,i)=>{
+    const y=i*rowH+8, ci=modelIndex[r.model];
+    const w=r.mean_latency_s/max*barW;
+    s+=`<text class="barname" x="0" y="${y+13}">${r.model.replace("-instruct","")}</text>`;
+    s+=`<rect class="barbg" x="0" y="${y+20}" width="${barW}" height="10" rx="5"/>`;
+    s+=`<rect x="0" y="${y+20}" width="${w}" height="10" rx="5" fill="${colorFor(ci)}"/>`;
+    s+=`<text class="barval" x="${barW+10}" y="${y+29}">${r.mean_latency_s.toFixed(2)}s</text>`;
+  });
+  s+="</svg>";
+  document.getElementById("latency").innerHTML=s;
+})();
+
+// sample inspector
+(function(){
+  const picker=document.getElementById("picker");
+  D.samples.forEach((s,i)=>{
+    const o=document.createElement("option");
+    o.value=i; o.textContent=`${i+1}. ${s.q}`;
+    picker.appendChild(o);
+  });
+  function show(idx){
+    const s=D.samples[idx];
+    document.getElementById("iq").innerHTML =
+      `${s.q} &nbsp;<span class="exp">expected: ${s.expected}</span>`;
+    document.getElementById("ians").innerHTML = lb.map(r=>{
+      const a=s.answers[r.model], ci=modelIndex[r.model];
+      const mk=a.correct?'<span class="mark ok">✓</span>':'<span class="mark no">✗</span>';
+      return `<div class="ans">
+        <span class="m"><span class="dot" style="background:${colorFor(ci)}"></span>${r.model}</span>
+        <span class="v">${mk}<span style="color:${a.correct?'var(--good)':'var(--bad)'}">${a.text}</span>
+          <span style="color:var(--faint)">${a.latency_s.toFixed(2)}s</span></span>
+      </div>`;
+    }).join("");
+  }
+  picker.addEventListener("change",e=>show(+e.target.value));
+  show(0);
+})();
+</script>
+</body>
+</html>

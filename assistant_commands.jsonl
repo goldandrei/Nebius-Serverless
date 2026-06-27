@@ -1,0 +1,12 @@
+{"id": 1, "input": "Remind me to call mom at 6pm", "gold": {"intent": "set_reminder", "slots": {"task": "call mom", "time": "18:00"}}}
+{"id": 2, "input": "Set a 10 minute timer", "gold": {"intent": "set_timer", "slots": {"duration_min": 10}}}
+{"id": 3, "input": "Turn off the kitchen lights", "gold": {"intent": "control_light", "slots": {"action": "off", "room": "kitchen"}}}
+{"id": 4, "input": "Dim the bedroom lights to 30%", "gold": {"intent": "control_light", "slots": {"action": "dim", "room": "bedroom", "level": 30}}}
+{"id": 5, "input": "Set the thermostat to 72 degrees", "gold": {"intent": "set_thermostat", "slots": {"temp_f": 72}}}
+{"id": 6, "input": "Play some jazz", "gold": {"intent": "play_music", "slots": {"genre": "jazz"}}}
+{"id": 7, "input": "What's the weather in Tokyo tomorrow", "gold": {"intent": "weather_query", "slots": {"location": "Tokyo", "day": "tomorrow"}}}
+{"id": 8, "input": "Remind me about the dentist on Friday at 9am", "gold": {"intent": "set_reminder", "slots": {"task": "dentist", "time": "09:00", "day": "Friday"}}}
+{"id": 9, "input": "Turn on the living room lights", "gold": {"intent": "control_light", "slots": {"action": "on", "room": "living room"}}}
+{"id": 10, "input": "Set a timer for an hour and a half", "gold": {"intent": "set_timer", "slots": {"duration_min": 90}}}
+{"id": 11, "input": "Lower the temperature to 68", "gold": {"intent": "set_thermostat", "slots": {"temp_f": 68}}}
+{"id": 12, "input": "Play the album Rumours by Fleetwood Mac", "gold": {"intent": "play_music", "slots": {"album": "Rumours", "artist": "Fleetwood Mac"}}}

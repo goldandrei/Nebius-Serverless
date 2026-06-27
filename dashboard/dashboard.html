@@ -1,0 +1,800 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nebius Model Eval</title>
+<style>
+  :root{
+    --bg:#0E1217;--panel:#161C24;--panel2:#1C242E;--line:#28323E;
+    --txt:#E6EBF0;--dim:#8A97A6;--faint:#5A6675;
+    --cyan:#4DD2C4;--amber:#E0A458;--violet:#8B9BF0;
+    --good:#6BD08B;--bad:#E0728A;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace;
+    --sans:ui-sans-serif,system-ui,"Inter",-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font-family:var(--sans);
+       line-height:1.5;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1100px;margin:0 auto;padding:32px 22px 80px}
+
+  /* header */
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.22em;
+           text-transform:uppercase;color:var(--cyan);margin-bottom:8px}
+  h1{font-size:28px;font-weight:700;letter-spacing:-.02em;margin-bottom:5px}
+  .meta-line{font-family:var(--mono);font-size:12px;color:var(--dim);min-height:18px}
+  .meta-line b{color:var(--txt);font-weight:500}
+  .divider{border:none;border-top:1px solid var(--line);margin:24px 0}
+
+  /* panels */
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+         padding:18px 18px 20px;animation:rise .35s ease both}
+  .plabel{font-family:var(--mono);font-size:10px;letter-spacing:.18em;
+          text-transform:uppercase;color:var(--faint);margin-bottom:14px}
+
+  /* method cards */
+  .method-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+  .method-card{border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+               cursor:pointer;transition:border-color .15s,background .15s}
+  .method-card:hover{border-color:var(--dim)}
+  .method-card.selected{border-color:var(--cyan);background:rgba(77,210,196,.06)}
+  .method-name{font-size:14px;font-weight:600;color:var(--txt);margin-bottom:4px}
+  .method-desc{font-size:12px;color:var(--dim);line-height:1.4;margin-bottom:8px}
+  .method-badge{display:inline-block;font-family:var(--mono);font-size:10px;
+                padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--faint)}
+  .method-badge.prog{color:var(--violet);border-color:var(--violet)}
+  .method-badge.ref{color:var(--amber);border-color:var(--amber)}
+  .method-badge.judge{color:var(--cyan);border-color:var(--cyan)}
+
+  /* dataset builder */
+  .builder{border-top:1px solid var(--line);padding-top:16px;margin-top:4px}
+  .builder label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+                 text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+  .builder-row{margin-bottom:13px}
+  .builder textarea,.builder select,.builder input[type=number]{
+    width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:7px;
+    color:var(--txt);font-family:var(--mono);font-size:12px;padding:9px 11px;
+    resize:vertical;transition:border-color .12s;outline:none}
+  .builder textarea:focus,.builder select:focus,.builder input[type=number]:focus{
+    border-color:var(--cyan)}
+  .builder select,.builder input[type=number]{resize:none}
+  .builder-cols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .build-bar{display:flex;align-items:center;gap:12px;margin-top:4px}
+  .build-btn{background:var(--panel2);border:1px solid var(--cyan);color:var(--cyan);
+             border-radius:7px;padding:8px 20px;font-family:var(--mono);font-size:12px;
+             font-weight:600;cursor:pointer;transition:background .12s}
+  .build-btn:hover{background:rgba(77,210,196,.1)}
+  .build-msg{font-family:var(--mono);font-size:11px}
+  .build-msg.ok{color:var(--good)}.build-msg.err{color:var(--bad)}
+
+  /* built-in examples strip */
+  .examples-strip{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+  .examples-label{font-family:var(--mono);font-size:10px;color:var(--faint);margin-bottom:8px}
+  .example-row{display:flex;gap:8px;flex-wrap:wrap}
+  .example-chip{border:1px solid var(--line);border-radius:7px;padding:6px 12px;
+                cursor:pointer;transition:border-color .12s,background .12s;
+                font-family:var(--mono);font-size:11px;color:var(--dim);
+                background:var(--panel)}
+  .example-chip:hover{border-color:var(--dim);color:var(--txt)}
+  .example-chip.selected{border-color:var(--cyan);color:var(--cyan);background:rgba(77,210,196,.06)}
+  .task-badge{display:inline-block;font-family:var(--mono);font-size:10px;
+              padding:2px 8px;border-radius:99px;border:1px solid var(--line);
+              color:var(--faint)}
+  .task-badge.prog{color:var(--violet);border-color:var(--violet)}
+  .task-badge.ref{color:var(--amber);border-color:var(--amber)}
+  .task-badge.judge{color:var(--cyan);border-color:var(--cyan)}
+
+  /* model picker */
+  .fam-label{font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+             text-transform:uppercase;color:var(--faint);
+             padding:10px 0 6px;border-top:1px solid var(--line);margin-top:8px}
+  .fam-label:first-child{border-top:none;margin-top:0;padding-top:0}
+  .model-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px;
+              margin-bottom:4px}
+  .model-item{display:flex;align-items:center;gap:10px;padding:8px 10px;
+              border-radius:8px;border:1px solid var(--line);cursor:pointer;
+              transition:border-color .12s,background .12s;user-select:none}
+  .model-item:hover{border-color:var(--cyan);background:var(--panel2)}
+  .model-item input[type=checkbox]{width:14px;height:14px;accent-color:var(--cyan);
+                                   flex-shrink:0;cursor:pointer}
+  .model-item.checked{border-color:var(--cyan);background:rgba(77,210,196,.06)}
+  .model-item.dimmed{opacity:.35;cursor:default}
+  .mname{font-family:var(--mono);font-size:12.5px;color:var(--txt)}
+  .mmeta{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:1px}
+  .gated{color:var(--amber);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+         margin-left:4px}
+
+  /* run bar */
+  .run-bar{display:flex;align-items:center;gap:14px;margin-top:18px;
+           padding-top:16px;border-top:1px solid var(--line);flex-wrap:wrap}
+  .sel-count{font-family:var(--mono);font-size:12px;color:var(--dim)}
+  .run-btn{background:var(--cyan);color:#0E1217;border:none;border-radius:8px;
+           padding:10px 28px;font-family:var(--mono);font-size:13px;font-weight:700;
+           cursor:pointer;transition:opacity .15s,transform .1s;flex-shrink:0}
+  .run-btn:hover:not(:disabled){transform:translateY(-1px)}
+  .run-btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+  .run-status{font-family:var(--mono);font-size:12px;color:var(--dim)}
+  .run-status.ok{color:var(--good)}.run-status.err{color:var(--bad)}
+  .spinner{display:inline-block;width:11px;height:11px;border:2px solid var(--line);
+           border-top-color:var(--cyan);border-radius:50%;
+           animation:spin .6s linear infinite;margin-right:5px;vertical-align:middle}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* results */
+  .results-section{margin-top:20px}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+
+  /* leaderboard */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+     color:var(--dim);text-align:right;font-weight:500;padding:0 0 9px;
+     border-bottom:1px solid var(--line)}
+  th.l,td.l{text-align:left}
+  td{padding:9px 0;border-bottom:1px solid var(--panel2);font-family:var(--mono);font-size:13px}
+  tr:last-child td{border-bottom:none}
+  .model-name{color:var(--txt);font-weight:500}
+  .preset-lbl{color:var(--faint);font-size:10.5px}
+  .best{color:var(--cyan)}
+  .dot{display:inline-block;width:8px;height:8px;border-radius:50%;
+       margin-right:7px;vertical-align:middle}
+
+  /* charts */
+  svg{display:block;width:100%;height:auto;overflow:visible}
+  .ax{stroke:var(--line);stroke-width:1}
+  .grid-l{stroke:var(--panel2);stroke-width:1}
+  .axlab{fill:var(--dim);font-family:var(--mono);font-size:10px}
+  .axtitle{fill:var(--faint);font-family:var(--mono);font-size:10px;
+           letter-spacing:.12em;text-transform:uppercase}
+  .ptlab{fill:var(--txt);font-family:var(--mono);font-size:11px}
+  .frontier{stroke:var(--cyan);stroke-width:1.4;stroke-dasharray:4 4;fill:none;opacity:.7}
+  .barbg{fill:var(--panel2)}
+  .barval{fill:var(--txt);font-family:var(--mono);font-size:11px}
+  .barname{fill:var(--dim);font-family:var(--mono);font-size:11px}
+
+  /* misc */
+  .empty{font-family:var(--mono);font-size:13px;color:var(--dim);
+         text-align:center;padding:44px 0}
+  .empty code{color:var(--cyan)}
+  .note{font-family:var(--mono);font-size:11px;color:var(--faint);
+        margin-top:28px;padding-top:16px;border-top:1px solid var(--line);line-height:1.7}
+  .note a{color:var(--faint)}
+
+  /* samples table */
+  .samples-wrap{overflow-x:auto;margin-top:4px}
+  .samples-tbl{width:100%;border-collapse:collapse;font-size:12px}
+  .samples-tbl th{font-family:var(--mono);font-size:10px;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--dim);font-weight:500;
+    padding:0 8px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  .samples-tbl th.l,.samples-tbl td.l{text-align:left}
+  .samples-tbl td{padding:8px;border-bottom:1px solid var(--panel2);
+    vertical-align:top;font-family:var(--mono)}
+  .samples-tbl tr:last-child td{border-bottom:none}
+  .samples-tbl tr:hover td{background:rgba(255,255,255,.02)}
+  .s-idx{color:var(--faint);font-size:11px;text-align:right}
+  .s-input{color:var(--txt);max-width:220px;word-break:break-word;line-height:1.45}
+  .s-expected{color:var(--dim);max-width:160px;word-break:break-word;
+    font-size:11px;line-height:1.45}
+  .s-answer{max-width:200px}
+  .s-pill{display:inline-flex;align-items:center;gap:4px;
+    font-family:var(--mono);font-size:11px;font-weight:700;
+    padding:2px 7px;border-radius:99px;margin-bottom:4px}
+  .s-pill.ok{background:rgba(107,208,139,.15);color:var(--good)}
+  .s-pill.bad{background:rgba(224,114,138,.15);color:var(--bad)}
+  .s-detail{font-family:var(--mono);font-size:10px;color:var(--faint);
+    margin-bottom:3px}
+  .s-text{color:var(--dim);font-size:11px;word-break:break-word;
+    line-height:1.4;white-space:pre-wrap;max-height:56px;overflow:hidden}
+  .toggle-samples{background:none;border:1px solid var(--line);color:var(--dim);
+    font-family:var(--mono);font-size:11px;padding:5px 14px;border-radius:6px;
+    cursor:pointer;margin-bottom:14px;transition:border-color .12s,color .12s}
+  .toggle-samples:hover{border-color:var(--cyan);color:var(--cyan)}
+
+  @keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  @media(prefers-reduced-motion:reduce){.panel{animation:none}}
+  @media(max-width:800px){.two-col,.task-grid{grid-template-columns:1fr}h1{font-size:22px}}
+  :focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="eyebrow" id="eyebrow">Nebius · Model eval</p>
+  <h1>Model eval dashboard</h1>
+  <p class="meta-line" id="meta"></p>
+  <p class="empty" style="margin-bottom:16px">Fill in your dataset below or pick a built-in example, select models, then click <b>Run comparison</b>.</p>
+  <hr class="divider">
+
+  <!-- ── dataset builder ────────────────────────────────────── -->
+  <div class="panel" style="margin-bottom:16px">
+    <p class="plabel">1 · Dataset — choose a scoring method, enter your data</p>
+    <div class="method-grid" id="method-grid"></div>
+    <div class="builder" id="builder-form" style="display:none"></div>
+    <div class="examples-strip" id="examples-strip" style="display:none">
+      <p class="examples-label">or jump straight to a built-in example ↓</p>
+      <div class="example-row" id="example-row"></div>
+    </div>
+  </div>
+
+  <!-- ── model picker ───────────────────────────────────────── -->
+  <div class="panel">
+    <p class="plabel">2 · Choose models to compare</p>
+    <div id="catalog-area"><p class="empty">Loading catalog…</p></div>
+    <div class="run-bar">
+      <span class="sel-count" id="sel-count">0 / 3 selected</span>
+      <button class="run-btn" id="run-btn" disabled>Run comparison</button>
+      <span class="run-status" id="run-status"></span>
+    </div>
+  </div>
+
+  <!-- ── results ────────────────────────────────────────────── -->
+  <div class="results-section" id="results-section"></div>
+
+</div>
+
+<script>
+const MAX_MODELS = 3;
+const COLORS = ["#4DD2C4","#8B9BF0","#E0A458","#E0728A","#6BD08B","#C4A4F0","#F0C84D"];
+const colorFor = i => COLORS[i % COLORS.length];
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+let selectedTask   = null;
+let selectedMethod = null;
+let builtinTasks   = [];
+
+// ── scoring methods ───────────────────────────────────────────────────────────
+const BADGE_CLASS   = { programmatic:"prog", reference_match:"ref", llm_judge:"judge" };
+const SCORER_LABELS = { programmatic:"programmatic", reference_match:"reference match", llm_judge:"llm judge" };
+
+const METHODS = [
+  {
+    id:    "programmatic",
+    name:  "Programmatic",
+    desc:  "One correct answer per input you can verify with code — a label, number, or JSON object.",
+    badge: "prog",
+    example: 'e.g. "Classify sentiment." → inputs: sentences → gold: "positive"/"negative"',
+  },
+  {
+    id:    "reference_match",
+    name:  "Reference Match",
+    desc:  "Right answer but can be phrased many ways — a question's answer, short summary. Scored by word-overlap F1.",
+    badge: "ref",
+    example: 'e.g. "Answer in one sentence." → inputs: questions → references: model answers',
+  },
+  {
+    id:    "llm_judge",
+    name:  "LLM Judge",
+    desc:  "No single right answer — writing quality, tone, helpfulness. A judge model grades against your rubric.",
+    badge: "judge",
+    example: 'e.g. "Write an apology email." → inputs: scenarios → one shared rubric',
+  },
+];
+
+function renderMethods() {
+  document.getElementById("method-grid").innerHTML = METHODS.map(m => `
+    <div class="method-card" data-id="${m.id}">
+      <div class="method-name">${m.name}</div>
+      <div class="method-desc">${m.desc}</div>
+      <span class="method-badge ${m.badge}">${SCORER_LABELS[m.id]}</span>
+    </div>`).join("");
+  document.querySelectorAll(".method-card").forEach(card =>
+    card.addEventListener("click", () => selectMethod(card.dataset.id))
+  );
+}
+
+function selectMethod(id) {
+  selectedMethod = id;
+  document.querySelectorAll(".method-card").forEach(c =>
+    c.classList.toggle("selected", c.dataset.id === id)
+  );
+  renderBuilder(id);
+  document.getElementById("builder-form").style.display = "";
+}
+
+function renderBuilder(method) {
+  const PH = {
+    programmatic: {
+      instruction: "Classify the sentiment as positive, negative, or neutral. Reply with one word.",
+      inputs:      "The food was cold and the service was slow.\nThe view was stunning and the staff was friendly.",
+    },
+    reference_match: {
+      instruction: "e.g. Answer the question in one sentence.",
+      inputs:      "e.g. What's the capital of Australia?\nWho wrote Romeo and Juliet?",
+    },
+    llm_judge: {
+      instruction: "e.g. Write a friendly one-line apology to a customer.",
+      inputs:      "e.g. Order #123 arrived 3 days late.\nA customer was charged twice for one order.",
+    },
+  };
+  const ph = PH[method] || PH.programmatic;
+
+  const sharedFields = `
+    <div class="builder-row">
+      <label>Instruction</label>
+      <textarea id="b-instruction" rows="2" placeholder="${ph.instruction}"></textarea>
+    </div>
+    <div class="builder-row">
+      <label>Inputs — one per line</label>
+      <textarea id="b-inputs" rows="5" placeholder="${ph.inputs}"></textarea>
+    </div>`;
+
+  let specific = "";
+  if (method === "programmatic") {
+    specific = `
+      <div class="builder-cols">
+        <div class="builder-row">
+          <label>Gold answers — one per line, aligned with inputs</label>
+          <textarea id="b-answers" rows="5" placeholder="negative\npositive"></textarea>
+        </div>
+        <div class="builder-row">
+          <label>Compare mode</label>
+          <select id="b-compare">
+            <option value="exact">exact — strip + lowercase match</option>
+            <option value="numeric">numeric — first number extracted</option>
+            <option value="json_fields">json_fields — F1 over key:value pairs</option>
+          </select>
+          <div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--faint);line-height:1.6">
+            <b>exact</b>: "Negative." → "negative" ✓<br>
+            <b>numeric</b>: "The answer is 42." → 42 ✓<br>
+            <b>json_fields</b>: {a:1, b:2} vs {a:1, b:9} → 0.5
+          </div>
+        </div>
+      </div>`;
+  } else if (method === "reference_match") {
+    specific = `
+      <div class="builder-cols">
+        <div class="builder-row">
+          <label>Reference answers — one per line, aligned with inputs</label>
+          <textarea id="b-references" rows="5" placeholder="e.g. The capital of Australia is Canberra.\nRomeo and Juliet was written by William Shakespeare."></textarea>
+        </div>
+        <div class="builder-row">
+          <label>Metric</label>
+          <select id="b-metric">
+            <option value="lexical">lexical — token F1 word overlap (no model needed)</option>
+            <option value="embedding">embedding — cosine similarity</option>
+          </select>
+        </div>
+      </div>`;
+  } else if (method === "llm_judge") {
+    specific = `
+      <div class="builder-cols">
+        <div class="builder-row">
+          <label>Rubric</label>
+          <textarea id="b-rubric" rows="5" placeholder="e.g. Score 1–5: apologizes clearly (2), warm/friendly tone (2), one concise line (1)."></textarea>
+        </div>
+        <div class="builder-row">
+          <label>Scale</label>
+          <input type="number" id="b-scale" value="5" min="2" max="10" style="width:80px">
+          <div style="margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--faint);line-height:1.6">
+            Judge scores each answer 1–<span id="scale-preview">5</span>,<br>normalized to 0–1 for the leaderboard.
+          </div>
+        </div>
+      </div>`;
+  }
+
+  document.getElementById("builder-form").innerHTML = `
+    <div class="builder">
+      <p style="margin:0 0 14px;font-size:11px;color:var(--faint)">Fields show example data — click any field and type your own.</p>
+      ${sharedFields}
+      ${specific}
+      <div class="build-bar">
+        <button class="build-btn" id="build-btn">▶ Build dataset</button>
+        <span class="build-msg" id="build-msg"></span>
+      </div>
+    </div>`;
+
+  document.getElementById("build-btn").addEventListener("click", handleBuild);
+  if (method === "llm_judge") {
+    const scaleInp = document.getElementById("b-scale");
+    if (scaleInp) scaleInp.addEventListener("input", () => {
+      document.getElementById("scale-preview").textContent = scaleInp.value;
+    });
+  }
+}
+
+async function handleBuild() {
+  const msgEl = document.getElementById("build-msg");
+  msgEl.className = "build-msg"; msgEl.textContent = "building…";
+
+  const instruction = document.getElementById("b-instruction")?.value.trim() || "";
+  const inputsRaw   = document.getElementById("b-inputs")?.value || "";
+  const inputs      = inputsRaw.split("\n").map(s => s.trim()).filter(Boolean);
+
+  if (!inputs.length) { msgEl.className="build-msg err"; msgEl.textContent="Add at least one input."; return; }
+
+  const body = { method: selectedMethod, instruction, inputs };
+
+  if (selectedMethod === "programmatic") {
+    const answersRaw = document.getElementById("b-answers")?.value || "";
+    body.answers = answersRaw.split("\n").map(s => s.trim());
+    body.compare = document.getElementById("b-compare")?.value || "exact";
+  } else if (selectedMethod === "reference_match") {
+    const refsRaw = document.getElementById("b-references")?.value || "";
+    body.references = refsRaw.split("\n").map(s => s.trim());
+    body.metric = document.getElementById("b-metric")?.value || "lexical";
+  } else if (selectedMethod === "llm_judge") {
+    body.rubric = document.getElementById("b-rubric")?.value.trim() || "";
+    body.scale  = parseInt(document.getElementById("b-scale")?.value || "5");
+  }
+
+  try {
+    const res  = await fetch("/api/build", { method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    msgEl.className = "build-msg ok";
+    msgEl.textContent = `✓ ${data.n} rows assembled`;
+    selectBuiltin(data.task);
+  } catch(e) {
+    msgEl.className = "build-msg err";
+    msgEl.textContent = `✗ ${e.message}`;
+  }
+}
+
+// ── built-in examples ─────────────────────────────────────────────────────────
+function renderExamples(tasks) {
+  builtinTasks = tasks;
+  const strip = document.getElementById("examples-strip");
+  const row   = document.getElementById("example-row");
+  if (!tasks.length) { strip.style.display="none"; return; }
+  strip.style.display = "";
+  row.innerHTML = tasks.map(t => {
+    const bc = BADGE_CLASS[t.scorer] || "";
+    return `<button class="example-chip" data-id="${esc(t.id)}">
+      ${esc(t.name)}
+      <span class="task-badge ${bc}" style="margin-left:6px">${esc(SCORER_LABELS[t.scorer]||t.scorer)}</span>
+    </button>`;
+  }).join("");
+  row.querySelectorAll(".example-chip").forEach(chip =>
+    chip.addEventListener("click", () => selectBuiltin(chip.dataset.id))
+  );
+}
+
+function selectBuiltin(id) {
+  selectedTask = id;
+  document.querySelectorAll(".example-chip").forEach(c =>
+    c.classList.toggle("selected", c.dataset.id === id)
+  );
+  const task = builtinTasks.find(t => t.id === id);
+  if (!task) return;
+  selectMethod(task.scorer);
+  fetch(`/api/tasks/${id}`)
+    .then(r => r.json())
+    .then(records => populateBuilder(records, task.scorer));
+}
+
+function populateBuilder(records, scorer) {
+  if (!records.length) return;
+  const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+
+  set("b-instruction", records[0].instruction || "");
+  set("b-inputs", records.map(r => r.input).join("\n"));
+
+  if (scorer === "programmatic") {
+    set("b-answers", records.map(r => {
+      const g = r.gold;
+      return typeof g === "object" ? JSON.stringify(g) : String(g ?? "");
+    }).join("\n"));
+    const cmp = document.getElementById("b-compare");
+    if (cmp) cmp.value = records[0].compare || "exact";
+  } else if (scorer === "reference_match") {
+    set("b-references", records.map(r => r.reference || "").join("\n"));
+    const met = document.getElementById("b-metric");
+    if (met) met.value = records[0].metric || "lexical";
+  } else if (scorer === "llm_judge") {
+    set("b-rubric", records[0].rubric || "");
+    set("b-scale",  records[0].scale  || 5);
+  }
+}
+
+// ── model picker ──────────────────────────────────────────────────────────────
+const FAMILY_ORDER = ["Qwen","DeepSeek","Llama","Mistral","Gemma","Phi","SmolLM","Other"];
+
+function modelFamily(id) {
+  const name = id.split("/")[1] || id;
+  if (/^Qwen/i.test(name))               return "Qwen";
+  if (/^DeepSeek/i.test(name))           return "DeepSeek";
+  if (/^Llama/i.test(name))              return "Llama";
+  if (/^(Mistral|Mixtral)/i.test(name))  return "Mistral";
+  if (/^gemma/i.test(name))              return "Gemma";
+  if (/^Phi/i.test(name))                return "Phi";
+  if (/^SmolLM/i.test(name))             return "SmolLM";
+  return "Other";
+}
+
+function renderPicker(catalog, selection) {
+  const selSet = new Set(selection.slice(0, MAX_MODELS));
+  const groups = {};
+  for (const m of catalog) {
+    const fam = modelFamily(m.id);
+    (groups[fam] = groups[fam] || []).push(m);
+  }
+  let html = "";
+  for (const fam of FAMILY_ORDER.filter(f => groups[f])) {
+    html += `<div class="fam-label">${fam}</div><div class="model-grid">`;
+    for (const m of groups[fam]) {
+      const name    = m.id.split("/")[1] || m.id;
+      const checked = selSet.has(m.id) ? "checked" : "";
+      const gated   = m.gated ? '<span class="gated">gated</span>' : "";
+      html += `<label class="model-item${selSet.has(m.id)?" checked":""}">
+        <input type="checkbox" class="model-check" value="${esc(m.id)}" ${checked}>
+        <span>
+          <div class="mname">${esc(name)}${gated}</div>
+          <div class="mmeta">${esc(m.preset)} &middot; $${m.rate_hr}/hr</div>
+        </span>
+      </label>`;
+    }
+    html += "</div>";
+  }
+  document.getElementById("catalog-area").innerHTML = html;
+  document.querySelectorAll(".model-check").forEach(cb =>
+    cb.addEventListener("change", updateSelCount)
+  );
+  updateSelCount();
+}
+
+function updateSelCount() {
+  const checked  = document.querySelectorAll(".model-check:checked");
+  const n        = checked.length;
+  const atLimit  = n >= MAX_MODELS;
+  checked.forEach(cb => cb.closest(".model-item").classList.add("checked"));
+  document.querySelectorAll(".model-check:not(:checked)").forEach(cb => {
+    const item = cb.closest(".model-item");
+    item.classList.remove("checked");
+    item.classList.toggle("dimmed", atLimit);
+    cb.disabled = atLimit;
+    item.style.cursor = atLimit ? "default" : "";
+  });
+  document.getElementById("sel-count").textContent = `${n} / ${MAX_MODELS} selected`;
+  document.getElementById("run-btn").disabled = n === 0;
+}
+
+// ── run ───────────────────────────────────────────────────────────────────────
+function setStatus(msg, type) {
+  const el = document.getElementById("run-status");
+  el.className = "run-status" + (type ? " " + type : "");
+  el.innerHTML = msg;
+}
+
+document.getElementById("run-btn").addEventListener("click", async () => {
+  const models = Array.from(document.querySelectorAll(".model-check:checked")).map(c => c.value);
+  if (!models.length) { setStatus("Select at least one model.", "err"); return; }
+
+  const btn = document.getElementById("run-btn");
+  btn.disabled = true;
+  setStatus('<span class="spinner"></span>Running…');
+
+  try {
+    const res = await fetch("/api/run", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({models, task: selectedTask}),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const results = await res.json();
+    if (results.error) throw new Error(results.error);
+    renderResults(results);
+    setStatus(
+      `Done &mdash; <b>${results.meta.n_models}</b> models &middot; ` +
+      `<b>${results.meta.n_tasks}</b> rows &middot; ${esc(results.meta.task_name)}`,
+      "ok"
+    );
+  } catch(e) {
+    setStatus("Error: " + esc(e.message), "err");
+  } finally {
+    btn.disabled = document.querySelectorAll(".model-check:checked").length === 0;
+  }
+});
+
+// ── results rendering ─────────────────────────────────────────────────────────
+function renderResults(D) {
+  const lb = D.leaderboard;
+  if (!lb || !lb.length) {
+    document.getElementById("results-section").innerHTML =
+      `<div style="margin-top:20px"><p class="empty">No results.</p></div>`;
+    return;
+  }
+
+  document.getElementById("eyebrow").textContent =
+    D.meta.mode === "live" ? "Live · Nebius Serverless" : "Local dry-run · mock endpoints";
+  document.getElementById("meta").innerHTML =
+    `<b>${D.meta.n_models}</b> models &middot; <b>${D.meta.n_tasks}</b> rows &middot; ` +
+    `benchmark <b>${esc(D.meta.task_name)}</b> &middot; mode <b>${esc(D.meta.mode)}</b>`;
+
+  const isJudge   = D.meta.scorer === "llm_judge";
+  const bestAcc   = Math.max(...lb.map(r=>r.accuracy));
+  const bestLat   = Math.min(...lb.map(r=>r.mean_latency_s));
+  const bestCost  = Math.min(...lb.map(r=>r.cost_per_1k_tokens_usd));
+  const modelIdx  = {};
+  lb.forEach((r,i) => modelIdx[r.model] = i);
+
+  const scoreLabel = isJudge ? "Judge score"
+    : D.meta.scorer === "reference_match" ? "Accuracy" : "Score";
+
+  const boardRows = lb.map(r => {
+    const ci = modelIdx[r.model];
+    return `<tr>
+      <td class="l">
+        <span class="dot" style="background:${colorFor(ci)}"></span>
+        <span class="model-name">${esc(r.model)}</span><br>
+        <span class="preset-lbl" style="margin-left:15px">${esc(r.preset)}</span>
+      </td>
+      <td class="${r.accuracy===bestAcc?'best':''}">${(r.accuracy*100).toFixed(1)}%</td>
+      <td class="${r.mean_latency_s===bestLat?'best':''}">${r.mean_latency_s.toFixed(2)}s</td>
+      <td>${r.p95_latency_s.toFixed(2)}s</td>
+      <td class="${r.cost_per_1k_tokens_usd===bestCost?'best':''}">$${r.cost_per_1k_tokens_usd.toFixed(4)}</td>
+      <td>$${r.total_run_cost_usd.toFixed(4)}</td>
+    </tr>`;
+  }).join("");
+
+  document.getElementById("results-section").innerHTML = `
+    <div class="results-section">
+      <div class="panel" style="animation-delay:.02s;margin-top:0">
+        <p class="plabel">Leaderboard &mdash; ${esc(D.meta.task_name)}</p>
+        <table>
+          <tr>
+            <th class="l">Model</th>
+            <th>${esc(scoreLabel)}</th>
+            <th>Mean lat</th>
+            <th>p95 lat</th>
+            <th>$ / 1k tok</th>
+            <th>Run cost</th>
+          </tr>
+          ${boardRows}
+        </table>
+      </div>
+      <div class="two-col">
+        <div class="panel" style="animation-delay:.05s">
+          <p class="plabel">Score vs cost</p>
+          ${buildScatter(lb, modelIdx)}
+        </div>
+        <div class="panel" style="animation-delay:.07s">
+          <p class="plabel">Mean latency</p>
+          ${buildLatency(lb, modelIdx)}
+        </div>
+      </div>
+      ${buildSamples(D)}
+    </div>`;
+}
+
+// ── samples table ─────────────────────────────────────────────────────────────
+function scoreDetail(ans) {
+  if (ans.field_f1  !== undefined) return `field_f1 ${(ans.field_f1*100).toFixed(0)}%`;
+  if (ans.sim       !== undefined) return `sim ${(ans.sim*100).toFixed(0)}%`;
+  if (ans.judge_score !== undefined) return `judge ${(ans.judge_score*100).toFixed(0)}%`;
+  if (ans.match     !== undefined) return ans.match ? "exact match" : "no match";
+  return "";
+}
+
+function buildSamples(D) {
+  const lb      = D.leaderboard;
+  const samples = D.samples;
+  if (!samples || !samples.length) return "";
+
+  const mids = lb.map(r => r.model);
+  const ths  = mids.map((mid, i) =>
+    `<th class="l" style="color:${colorFor(i)}">${esc(mid)}</th>`
+  ).join("");
+
+  const rows = samples.map((row, ri) => {
+    const answerCells = mids.map(mid => {
+      const ans = row.answers[mid];
+      if (!ans) return `<td class="s-answer"><span style="color:var(--faint)">—</span></td>`;
+      const ok      = ans.correct;
+      const score   = (ans.score * 100).toFixed(0) + "%";
+      const detail  = scoreDetail(ans);
+      const text    = String(ans.text || "").slice(0, 120);
+      return `<td class="s-answer">
+        <span class="s-pill ${ok?'ok':'bad'}">${ok?"✓":"✗"} ${score}</span>
+        ${detail ? `<div class="s-detail">${esc(detail)}</div>` : ""}
+        <div class="s-text">${esc(text)}</div>
+      </td>`;
+    }).join("");
+
+    return `<tr>
+      <td class="s-idx">${ri + 1}</td>
+      <td class="l s-input">${esc(row.q)}</td>
+      <td class="l s-expected">${esc(String(row.expected).slice(0, 80))}</td>
+      ${answerCells}
+    </tr>`;
+  }).join("");
+
+  return `
+    <div class="panel" style="animation-delay:.1s;margin-top:16px">
+      <p class="plabel">Sample answers &mdash; ${esc(D.meta.task_name)}</p>
+      <button class="toggle-samples" onclick="
+        const t=this.nextElementSibling;
+        const open=t.style.display!=='none';
+        t.style.display=open?'none':'';
+        this.textContent=open?'Show answers ▾':'Hide answers ▴';
+      ">Hide answers ▴</button>
+      <div class="samples-wrap">
+        <table class="samples-tbl">
+          <tr>
+            <th class="l">#</th>
+            <th class="l">Input</th>
+            <th class="l">Expected</th>
+            ${ths}
+          </tr>
+          ${rows}
+        </table>
+      </div>
+    </div>`;
+}
+
+// ── charts ────────────────────────────────────────────────────────────────────
+function buildScatter(lb, modelIdx) {
+  const W=520,H=310,m={t:18,r:70,b:46,l:46};
+  const pts = lb.map(r=>({x:r.cost_per_1k_tokens_usd,y:r.accuracy,
+    label:r.model.replace(/-instruct$/i,"").replace(/-it$/i,""),i:modelIdx[r.model]}));
+  const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
+  const xmin=Math.min(...xs)*.82,xmax=Math.max(...xs)*1.12;
+  const ymin=Math.max(0,Math.min(...ys)-.18),ymax=1;
+  const X=v=>m.l+(v-xmin)/(xmax-xmin)*(W-m.l-m.r);
+  const Y=v=>H-m.b-(v-ymin)/(ymax-ymin)*(H-m.t-m.b);
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Score vs cost">`;
+  for(let k=0;k<=4;k++){
+    const yv=ymin+(ymax-ymin)*k/4,y=Y(yv);
+    s+=`<line class="grid-l" x1="${m.l}" y1="${y}" x2="${W-m.r}" y2="${y}"/>`;
+    s+=`<text class="axlab" x="${m.l-6}" y="${y+3}" text-anchor="end">${(yv*100).toFixed(0)}%</text>`;
+  }
+  for(let k=0;k<=3;k++){
+    const xv=xmin+(xmax-xmin)*k/3,x=X(xv);
+    s+=`<text class="axlab" x="${x}" y="${H-m.b+15}" text-anchor="middle">$${xv.toFixed(4)}</text>`;
+  }
+  s+=`<line class="ax" x1="${m.l}" y1="${H-m.b}" x2="${W-m.r}" y2="${H-m.b}"/>`;
+  s+=`<line class="ax" x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${H-m.b}"/>`;
+  s+=`<text class="axtitle" x="${(m.l+W-m.r)/2}" y="${H-4}" text-anchor="middle">cost / 1k tokens</text>`;
+  s+=`<text class="axtitle" transform="translate(12,${(m.t+H-m.b)/2}) rotate(-90)" text-anchor="middle">score</text>`;
+  const sorted=[...pts].sort((a,b)=>a.x-b.x);
+  const front=[];let bestY=-1;
+  for(const p of sorted){if(p.y>bestY){front.push(p);bestY=p.y;}}
+  if(front.length>1)
+    s+=`<polyline class="frontier" points="${front.map(p=>`${X(p.x)},${Y(p.y)}`).join(" ")}"/>`;
+  for(const p of pts){
+    s+=`<circle cx="${X(p.x)}" cy="${Y(p.y)}" r="6.5" fill="${colorFor(p.i)}" stroke="#0E1217" stroke-width="1.5"/>`;
+    const anchor=X(p.x)>W-m.r-80?"end":"start";
+    s+=`<text class="ptlab" x="${X(p.x)+(anchor==="end"?-11:11)}" y="${Y(p.y)+4}" text-anchor="${anchor}">${esc(p.label)}</text>`;
+  }
+  return s+"</svg>";
+}
+
+function buildLatency(lb, modelIdx) {
+  const rows=[...lb].sort((a,b)=>a.mean_latency_s-b.mean_latency_s);
+  const W=420,rowH=46,H=rows.length*rowH+10,barW=W-160;
+  const max=Math.max(...rows.map(r=>r.mean_latency_s))*1.15;
+  let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Mean latency">`;
+  rows.forEach((r,i)=>{
+    const y=i*rowH+8,ci=modelIdx[r.model],w=r.mean_latency_s/max*barW;
+    const name=r.model.replace(/-instruct$/i,"").replace(/-it$/i,"");
+    s+=`<text class="barname" x="0" y="${y+13}">${esc(name)}</text>`;
+    s+=`<rect class="barbg" x="0" y="${y+20}" width="${barW}" height="10" rx="5"/>`;
+    s+=`<rect x="0" y="${y+20}" width="${w}" height="10" rx="5" fill="${colorFor(ci)}"/>`;
+    s+=`<text class="barval" x="${barW+10}" y="${y+29}">${r.mean_latency_s.toFixed(2)}s</text>`;
+  });
+  return s+"</svg>";
+}
+
+// ── init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  renderMethods();
+  try {
+    const [tasks, catalog, selection] = await Promise.all([
+      fetch("/api/tasks").then(r => { if(!r.ok) throw new Error(); return r.json(); }),
+      fetch("/api/catalog").then(r => { if(!r.ok) throw new Error(); return r.json(); }),
+      fetch("/api/selection").then(r => { if(!r.ok) throw new Error(); return r.json(); }),
+    ]);
+    renderExamples(tasks);
+    renderPicker(catalog, selection);
+    // default: select first built-in example
+    if (tasks.length) selectBuiltin(tasks[0].id);
+  } catch(e) {
+    document.getElementById("catalog-area").innerHTML =
+      `<p class="empty">Start the server: <code>uv run scripts/server.py</code></p>`;
+    document.getElementById("run-btn").disabled = true;
+  }
+}
+
+init();
+</script>
+</body>
+</html>

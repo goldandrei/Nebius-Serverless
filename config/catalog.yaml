@@ -1,0 +1,244 @@
+# Full model catalog — every model the harness knows how to run.
+# Add any HF model ID supported by vLLM here.
+#
+# preset / instance_type: choose based on VRAM needed (fp16: ~2 GB per 1B params)
+#   gpu-l40s-a  / 1gpu-8vcpu-32gb   — L40S 48 GB, good up to ~20B fp16
+#   gpu-h100-sxm / 1gpu-20vcpu-200gb — H100 80 GB, good up to ~70B fp16
+#
+# rate_hr: VERIFY on https://nebius.com/pricing before reporting costs
+#   L40S ~$1.55/hr  |  H100 SXM ~$3.80/hr  |  H200 SXM ~$5.50/hr
+#
+# gated: true — requires HF_TOKEN + license acceptance on hf.co
+#
+# mock profile fields:
+#   Structured output (programmatic scorer):
+#     p_bad_json, p_wrong_intent, p_slot_err
+#   Factual Q&A (reference_match scorer):
+#     p_ref_err       — probability of a wrong factual answer
+#   Instruction following (llm_judge scorer):
+#     judge_score_mean, judge_score_sd — simulated judge verdict distribution
+#   Latency:
+#     lat_mean, lat_sd — response time in seconds
+
+models:
+
+  # ── Qwen 2.5 ─────────────────────────────────────────────────────────────────
+  - id: Qwen/Qwen2.5-0.5B-Instruct
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.25, p_wrong_intent: 0.30, p_slot_err: 0.45,
+           p_ref_err: 0.45, judge_score_mean: 0.35, judge_score_sd: 0.12,
+           lat_mean: 0.22, lat_sd: 0.05}
+
+  - id: Qwen/Qwen2.5-1.5B-Instruct
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.05, p_wrong_intent: 0.10, p_slot_err: 0.22,
+           p_ref_err: 0.22, judge_score_mean: 0.58, judge_score_sd: 0.11,
+           lat_mean: 0.46, lat_sd: 0.08}
+
+  - id: Qwen/Qwen2.5-3B-Instruct
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.02, p_wrong_intent: 0.05, p_slot_err: 0.14,
+           p_ref_err: 0.12, judge_score_mean: 0.72, judge_score_sd: 0.10,
+           lat_mean: 0.82, lat_sd: 0.11}
+
+  - id: Qwen/Qwen2.5-7B-Instruct
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.02, p_slot_err: 0.06,
+           p_ref_err: 0.04, judge_score_mean: 0.86, judge_score_sd: 0.09,
+           lat_mean: 2.10, lat_sd: 0.22}
+
+  - id: Qwen/Qwen2.5-14B-Instruct
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.03,
+           p_ref_err: 0.02, judge_score_mean: 0.92, judge_score_sd: 0.07,
+           lat_mean: 4.40, lat_sd: 0.38}
+
+  - id: Qwen/Qwen2.5-32B-Instruct
+    preset: gpu-h100-sxm
+    instance_type: 1gpu-20vcpu-200gb
+    rate_hr: 3.80
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
+           p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.06,
+           lat_mean: 4.90, lat_sd: 0.45}
+
+  - id: Qwen/Qwen2.5-72B-Instruct
+    preset: gpu-h100-sxm
+    instance_type: 1gpu-20vcpu-200gb
+    rate_hr: 3.80
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
+           p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
+           lat_mean: 7.80, lat_sd: 0.70}
+
+  # ── Qwen 2.5-Coder ───────────────────────────────────────────────────────────
+  - id: Qwen/Qwen2.5-Coder-7B-Instruct
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
+           p_ref_err: 0.04, judge_score_mean: 0.85, judge_score_sd: 0.09,
+           lat_mean: 2.15, lat_sd: 0.22}
+
+  - id: Qwen/Qwen2.5-Coder-14B-Instruct
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.02,
+           p_ref_err: 0.02, judge_score_mean: 0.91, judge_score_sd: 0.07,
+           lat_mean: 4.45, lat_sd: 0.40}
+
+  # ── Llama 3.2 (non-gated) ────────────────────────────────────────────────────
+  - id: meta-llama/Llama-3.2-1B-Instruct
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.18, p_wrong_intent: 0.22, p_slot_err: 0.38,
+           p_ref_err: 0.38, judge_score_mean: 0.45, judge_score_sd: 0.12,
+           lat_mean: 0.28, lat_sd: 0.06}
+
+  - id: meta-llama/Llama-3.2-3B-Instruct
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.03, p_slot_err: 0.10,
+           p_ref_err: 0.10, judge_score_mean: 0.75, judge_score_sd: 0.10,
+           lat_mean: 1.05, lat_sd: 0.16}
+
+  # ── Llama 3.1 (gated) ────────────────────────────────────────────────────────
+  - id: meta-llama/Llama-3.1-8B-Instruct
+    gated: true
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
+           p_ref_err: 0.04, judge_score_mean: 0.87, judge_score_sd: 0.08,
+           lat_mean: 2.50, lat_sd: 0.26}
+
+  - id: meta-llama/Llama-3.1-70B-Instruct
+    gated: true
+    preset: gpu-h100-sxm
+    instance_type: 1gpu-20vcpu-200gb
+    rate_hr: 3.80
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
+           p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
+           lat_mean: 9.00, lat_sd: 0.90}
+
+  # ── Llama 3.3 (gated) ────────────────────────────────────────────────────────
+  - id: meta-llama/Llama-3.3-70B-Instruct
+    gated: true
+    preset: gpu-h100-sxm
+    instance_type: 1gpu-20vcpu-200gb
+    rate_hr: 3.80
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
+           p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
+           lat_mean: 9.20, lat_sd: 0.92}
+
+  # ── Mistral ───────────────────────────────────────────────────────────────────
+  - id: mistralai/Mistral-7B-Instruct-v0.3
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.01, p_wrong_intent: 0.03, p_slot_err: 0.09,
+           p_ref_err: 0.07, judge_score_mean: 0.83, judge_score_sd: 0.09,
+           lat_mean: 2.00, lat_sd: 0.20}
+
+  - id: mistralai/Mixtral-8x7B-Instruct-v0.1
+    preset: gpu-h100-sxm
+    instance_type: 1gpu-20vcpu-200gb
+    rate_hr: 3.80
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
+           p_ref_err: 0.03, judge_score_mean: 0.90, judge_score_sd: 0.08,
+           lat_mean: 3.80, lat_sd: 0.35}
+
+  # ── Gemma 2 ───────────────────────────────────────────────────────────────────
+  - id: google/gemma-2-2b-it
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.04, p_wrong_intent: 0.08, p_slot_err: 0.20,
+           p_ref_err: 0.18, judge_score_mean: 0.62, judge_score_sd: 0.11,
+           lat_mean: 0.55, lat_sd: 0.09}
+
+  - id: google/gemma-2-9b-it
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.02, p_slot_err: 0.06,
+           p_ref_err: 0.04, judge_score_mean: 0.88, judge_score_sd: 0.08,
+           lat_mean: 2.70, lat_sd: 0.28}
+
+  - id: google/gemma-2-27b-it
+    preset: gpu-h100-sxm
+    instance_type: 1gpu-20vcpu-200gb
+    rate_hr: 3.80
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
+           p_ref_err: 0.01, judge_score_mean: 0.94, judge_score_sd: 0.06,
+           lat_mean: 4.20, lat_sd: 0.40}
+
+  # ── SmolLM2 ───────────────────────────────────────────────────────────────────
+  - id: HuggingFaceTB/SmolLM2-1.7B-Instruct
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.10, p_wrong_intent: 0.18, p_slot_err: 0.32,
+           p_ref_err: 0.28, judge_score_mean: 0.55, judge_score_sd: 0.11,
+           lat_mean: 0.35, lat_sd: 0.07}
+
+  # ── DeepSeek-R1 distill ───────────────────────────────────────────────────────
+  - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.06, p_wrong_intent: 0.12, p_slot_err: 0.25,
+           p_ref_err: 0.22, judge_score_mean: 0.58, judge_score_sd: 0.11,
+           lat_mean: 0.50, lat_sd: 0.09}
+
+  - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.02, p_slot_err: 0.05,
+           p_ref_err: 0.04, judge_score_mean: 0.87, judge_score_sd: 0.09,
+           lat_mean: 2.30, lat_sd: 0.24}
+
+  - id: deepseek-ai/DeepSeek-R1-Distill-Llama-8B
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
+           p_ref_err: 0.04, judge_score_mean: 0.86, judge_score_sd: 0.09,
+           lat_mean: 2.60, lat_sd: 0.26}
+
+  - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
+           p_ref_err: 0.02, judge_score_mean: 0.92, judge_score_sd: 0.07,
+           lat_mean: 4.60, lat_sd: 0.42}
+
+  - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
+    preset: gpu-h100-sxm
+    instance_type: 1gpu-20vcpu-200gb
+    rate_hr: 3.80
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
+           p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.06,
+           lat_mean: 5.20, lat_sd: 0.48}
+
+  # ── Phi-3.5 ───────────────────────────────────────────────────────────────────
+  - id: microsoft/Phi-3.5-mini-instruct
+    preset: gpu-l40s-a
+    instance_type: 1gpu-8vcpu-32gb
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.01, p_wrong_intent: 0.04, p_slot_err: 0.10,
+           p_ref_err: 0.08, judge_score_mean: 0.80, judge_score_sd: 0.10,
+           lat_mean: 0.90, lat_sd: 0.12}

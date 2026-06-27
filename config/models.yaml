@@ -1,0 +1,5 @@
+# Updated by dashboard picker.
+compare:
+  - Qwen/Qwen2.5-0.5B-Instruct
+  - Qwen/Qwen2.5-7B-Instruct
+  - deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
