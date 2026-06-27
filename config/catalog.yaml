@@ -23,7 +23,10 @@
 models:
 
   # ── Qwen 2.5 ─────────────────────────────────────────────────────────────────
+  # tokenfactory_ok: verified against GET /v1/models on api.tokenfactory.nebius.com
+  # Only large production models are hosted there; sub-7B models are not.
   - id: Qwen/Qwen2.5-0.5B-Instruct
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -32,6 +35,7 @@ models:
            lat_mean: 0.22, lat_sd: 0.05}
 
   - id: Qwen/Qwen2.5-1.5B-Instruct
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -40,6 +44,7 @@ models:
            lat_mean: 0.46, lat_sd: 0.08}
 
   - id: Qwen/Qwen2.5-3B-Instruct
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -48,6 +53,7 @@ models:
            lat_mean: 0.82, lat_sd: 0.11}
 
   - id: Qwen/Qwen2.5-7B-Instruct
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -56,6 +62,7 @@ models:
            lat_mean: 2.10, lat_sd: 0.22}
 
   - id: Qwen/Qwen2.5-14B-Instruct
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -64,6 +71,7 @@ models:
            lat_mean: 4.40, lat_sd: 0.38}
 
   - id: Qwen/Qwen2.5-32B-Instruct
+    tokenfactory_ok: false
     preset: gpu-h100-sxm
     instance_type: 1gpu-20vcpu-200gb
     rate_hr: 3.80
@@ -72,6 +80,7 @@ models:
            lat_mean: 4.90, lat_sd: 0.45}
 
   - id: Qwen/Qwen2.5-72B-Instruct
+    tokenfactory_ok: false
     preset: gpu-h100-sxm
     instance_type: 1gpu-20vcpu-200gb
     rate_hr: 3.80
@@ -81,6 +90,7 @@ models:
 
   # ── Qwen 2.5-Coder ───────────────────────────────────────────────────────────
   - id: Qwen/Qwen2.5-Coder-7B-Instruct
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -89,6 +99,7 @@ models:
            lat_mean: 2.15, lat_sd: 0.22}
 
   - id: Qwen/Qwen2.5-Coder-14B-Instruct
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -98,6 +109,7 @@ models:
 
   # ── Llama 3.2 (non-gated) ────────────────────────────────────────────────────
   - id: meta-llama/Llama-3.2-1B-Instruct
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -106,6 +118,7 @@ models:
            lat_mean: 0.28, lat_sd: 0.06}
 
   - id: meta-llama/Llama-3.2-3B-Instruct
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -116,6 +129,7 @@ models:
   # ── Llama 3.1 (gated) ────────────────────────────────────────────────────────
   - id: meta-llama/Llama-3.1-8B-Instruct
     gated: true
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -125,6 +139,7 @@ models:
 
   - id: meta-llama/Llama-3.1-70B-Instruct
     gated: true
+    tokenfactory_ok: false
     preset: gpu-h100-sxm
     instance_type: 1gpu-20vcpu-200gb
     rate_hr: 3.80
@@ -132,9 +147,10 @@ models:
            p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
            lat_mean: 9.00, lat_sd: 0.90}
 
-  # ── Llama 3.3 (gated) ────────────────────────────────────────────────────────
+  # ── Llama 3.3 — confirmed on Token Factory ───────────────────────────────────
   - id: meta-llama/Llama-3.3-70B-Instruct
     gated: true
+    tokenfactory_ok: true
     preset: gpu-h100-sxm
     instance_type: 1gpu-20vcpu-200gb
     rate_hr: 3.80
@@ -144,6 +160,7 @@ models:
 
   # ── Mistral ───────────────────────────────────────────────────────────────────
   - id: mistralai/Mistral-7B-Instruct-v0.3
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -152,6 +169,7 @@ models:
            lat_mean: 2.00, lat_sd: 0.20}
 
   - id: mistralai/Mixtral-8x7B-Instruct-v0.1
+    tokenfactory_ok: false
     preset: gpu-h100-sxm
     instance_type: 1gpu-20vcpu-200gb
     rate_hr: 3.80
@@ -161,6 +179,7 @@ models:
 
   # ── Gemma 2 ───────────────────────────────────────────────────────────────────
   - id: google/gemma-2-2b-it
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -169,6 +188,7 @@ models:
            lat_mean: 0.55, lat_sd: 0.09}
 
   - id: google/gemma-2-9b-it
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -177,6 +197,7 @@ models:
            lat_mean: 2.70, lat_sd: 0.28}
 
   - id: google/gemma-2-27b-it
+    tokenfactory_ok: false
     preset: gpu-h100-sxm
     instance_type: 1gpu-20vcpu-200gb
     rate_hr: 3.80
@@ -186,6 +207,7 @@ models:
 
   # ── SmolLM2 ───────────────────────────────────────────────────────────────────
   - id: HuggingFaceTB/SmolLM2-1.7B-Instruct
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -195,6 +217,7 @@ models:
 
   # ── DeepSeek-R1 distill ───────────────────────────────────────────────────────
   - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -203,6 +226,7 @@ models:
            lat_mean: 0.50, lat_sd: 0.09}
 
   - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -211,6 +235,7 @@ models:
            lat_mean: 2.30, lat_sd: 0.24}
 
   - id: deepseek-ai/DeepSeek-R1-Distill-Llama-8B
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -219,6 +244,7 @@ models:
            lat_mean: 2.60, lat_sd: 0.26}
 
   - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55
@@ -227,6 +253,7 @@ models:
            lat_mean: 4.60, lat_sd: 0.42}
 
   - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
+    tokenfactory_ok: false
     preset: gpu-h100-sxm
     instance_type: 1gpu-20vcpu-200gb
     rate_hr: 3.80
@@ -236,6 +263,7 @@ models:
 
   # ── Phi-3.5 ───────────────────────────────────────────────────────────────────
   - id: microsoft/Phi-3.5-mini-instruct
+    tokenfactory_ok: false
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.55

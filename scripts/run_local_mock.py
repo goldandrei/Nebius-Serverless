@@ -28,7 +28,7 @@ DASHBOARD_PATH = ROOT / "dashboard" / "dashboard.html"
 
 def main():
     print("Running local mock eval...")
-    results = eval_runner.run(mock=True)
+    results = eval_runner.run(backend="mock")
 
     RESULTS_PATH.write_text(json.dumps(results, indent=2), encoding="utf-8")
     print(f"  wrote {RESULTS_PATH.relative_to(ROOT)}")

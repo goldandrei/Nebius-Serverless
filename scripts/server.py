@@ -67,7 +67,10 @@ class Handler(BaseHTTPRequestHandler):
         body     = json.loads(self.rfile.read(length))
         selected = body.get("models", [])
         task     = body.get("task") or "assistant_commands"
+        backend  = body.get("backend", "mock")
 
+        if backend not in ("mock", "tokenfactory", "endpoint"):
+            self._json({"error": f"Unknown backend {backend!r}"}, 400); return
         if not selected:
             self._json({"error": "No models selected"}, 400); return
         if len(selected) > 3:
@@ -79,7 +82,7 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             from src import eval_runner
-            results = eval_runner.run(mock=True, task_file=task)
+            results = eval_runner.run(backend=backend, task_file=task)
             (ROOT / "results" / "results.json").write_text(
                 json.dumps(results, indent=2), encoding="utf-8"
             )

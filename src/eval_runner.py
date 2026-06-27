@@ -25,7 +25,6 @@ _OTHER_INTENTS = [
     "set_thermostat", "play_music", "weather_query",
 ]
 
-# Mock prose fragments for instruction-following responses
 _PROSE_GOOD = [
     "Here are the key points as requested:\n• First item\n• Second item\n• Third item",
     "Based on the instructions:\n1. Point one\n2. Point two\n3. Point three",
@@ -56,9 +55,9 @@ def _mock_embed(text: str) -> list:
 def _make_embed(api_key: str = None, base_url: str = None, model: str = None):
     """Return an embed callable. Falls back to mock if no API key is configured."""
     api_key  = api_key  or os.environ.get("NEBIUS_API_KEY")
-    base_url = base_url or os.environ.get("NEBIUS_EMBED_URL",
-                                          "https://api.studio.nebius.ai/v1/")
-    model    = model    or os.environ.get("EMBEDDING_MODEL", "BAAI/bge-en-icl")
+    base_url = base_url or os.environ.get("NEBIUS_BASE_URL",
+                                          "https://api.tokenfactory.nebius.com/v1/")
+    model    = model    or os.environ.get("EMBEDDING_MODEL", "Qwen/Qwen3-Embedding-8B")
 
     if not api_key:
         return _mock_embed
@@ -174,10 +173,14 @@ def load_config(
 def list_catalog(catalog_file: Path = CATALOG_FILE) -> None:
     catalog = load_catalog(catalog_file)
     gated = {True: " [gated]", False: "", None: ""}
+    tf    = {True: " [TF]",    False: "",  None: ""}
     print(f"{'ID':<52} {'preset':<16} {'rate_hr':>8}  notes")
     print("-" * 90)
     for m in catalog.values():
-        print(f"{m['id']:<52} {m['preset']:<16} ${m['rate_hr']:>5.2f}/hr{gated.get(m.get('gated'), '')}")
+        print(
+            f"{m['id']:<52} {m['preset']:<16} ${m['rate_hr']:>5.2f}/hr"
+            f"{gated.get(m.get('gated'), '')}{tf.get(m.get('tokenfactory_ok'), '')}"
+        )
 
 
 # ── mock endpoint ─────────────────────────────────────────────────────────────
@@ -217,7 +220,6 @@ class MockEndpoint:
         gold    = task_item["gold"]
         compare = task_item.get("compare", "json_fields" if isinstance(gold, dict) else "exact")
 
-        # exact / numeric — gold is a string or number
         if not isinstance(gold, dict):
             p_err = self.m.get("p_wrong_intent", 0.15)
             if rng.random() < p_err:
@@ -226,7 +228,6 @@ class MockEndpoint:
                 raw = str(gold)
             return {"raw": raw, "latency_s": lat, "out_tokens": rng.randint(3, 10)}
 
-        # json_fields — gold is a flat dict
         if rng.random() < self.m["p_bad_json"]:
             return {"raw": "Sure! " + json.dumps(gold)[:-1],
                     "latency_s": lat, "out_tokens": rng.randint(10, 30)}
@@ -239,7 +240,7 @@ class MockEndpoint:
                     pred[k] = rng.choice([i for i in _OTHER_INTENTS if i != gold["intent"]])
             elif rng.random() < self.m["p_slot_err"]:
                 if rng.random() < 0.5:
-                    continue  # drop key
+                    continue
                 pred[k] = (v + 1) if isinstance(v, (int, float)) and not isinstance(v, bool) \
                     else str(v) + "_x"
             else:
@@ -250,7 +251,13 @@ class MockEndpoint:
 
 # ── main eval loop ────────────────────────────────────────────────────────────
 
-def run(mock: bool = True, task_file: str = None) -> dict:
+def run(backend: str = "mock", task_file: str = None) -> dict:
+    """Run the eval harness.
+
+    backend: "mock"         — fully offline, deterministic fake responses
+             "tokenfactory" — Token Factory hosted API (NEBIUS_API_KEY + NEBIUS_BASE_URL)
+             "endpoint"     — self-hosted Nebius Serverless Endpoints (creates/deletes GPU VMs)
+    """
     tasks  = load_tasks(task_file=task_file)
     models = load_config()
 
@@ -258,12 +265,14 @@ def run(mock: bool = True, task_file: str = None) -> dict:
     task_meta    = {t["id"]: t for t in available_tasks()}
     task_label   = task_meta.get(task_file, {}).get("name", task_file or "mixed") if task_file else "mixed"
 
-    if mock:
-        results = _run_mock(tasks, models, task_label, first_scorer, task_file)
+    if backend == "mock":
+        return _run_mock(tasks, models, task_label, first_scorer, task_file)
+    elif backend == "tokenfactory":
+        return _run_tokenfactory(tasks, models, task_label, first_scorer, task_file)
+    elif backend == "endpoint":
+        return _run_endpoint(tasks, models, task_label, first_scorer, task_file)
     else:
-        results = _run_live(tasks, models, task_label, first_scorer, task_file)
-
-    return results
+        raise ValueError(f"Unknown backend {backend!r}; choose mock, tokenfactory, or endpoint")
 
 
 def _build_leaderboard(models, per_model, mid_key, n_tasks):
@@ -349,8 +358,105 @@ def _run_mock(tasks, models, task_label, first_scorer, task_file):
     }
 
 
-def _run_live(tasks, models, task_label, first_scorer, task_file):
-    """Real endpoint path: create → eval → delete per model (sequential)."""
+def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file):
+    """Token Factory hosted API — no Serverless endpoints or jobs created."""
+    import openai
+
+    base_url = os.environ["NEBIUS_BASE_URL"]
+    api_key  = os.environ["NEBIUS_API_KEY"]
+
+    tf_models = [m for m in models if m.get("tokenfactory_ok")]
+    if not tf_models:
+        raise ValueError(
+            "No tokenfactory_ok models in current selection. "
+            "Add a model with tokenfactory_ok: true to config/models.yaml "
+            "(e.g. meta-llama/Llama-3.3-70B-Instruct)."
+        )
+
+    client  = openai.OpenAI(base_url=base_url, api_key=api_key)
+    mid_key = "id"
+    embed   = _make_embed()
+
+    per_model = {m[mid_key]: {"lat": [], "out_tokens": [], "score": 0.0, "correct": 0}
+                 for m in tf_models}
+
+    samples = []
+    for task in tasks:
+        scorer_name = task.get("scorer", "programmatic")
+        row = {"q": task["input"], "expected": task_expected(task),
+               "scorer": scorer_name, "answers": {}}
+
+        for m in tf_models:
+            mid  = m[mid_key]
+            msgs = []
+            if task.get("instruction"):
+                msgs.append({"role": "system", "content": task["instruction"]})
+            msgs.append({"role": "user", "content": task["input"]})
+
+            t0   = time.time()
+            resp = client.chat.completions.create(
+                model=mid, messages=msgs, temperature=0
+            )
+            lat        = time.time() - t0
+            raw        = resp.choices[0].message.content
+            out_tokens = resp.usage.completion_tokens
+
+            s, detail = scoring.score(raw, task, embed=embed)
+
+            per_model[mid]["lat"].append(lat)
+            per_model[mid]["out_tokens"].append(out_tokens)
+            per_model[mid]["score"]   += s
+            per_model[mid]["correct"] += int(s >= 0.5)
+
+            row["answers"][mid] = {
+                "text":       raw,
+                "correct":    s >= 0.5,
+                "score":      round(s, 3),
+                "latency_s":  round(lat, 3),
+                "out_tokens": out_tokens,
+                **detail,
+            }
+        samples.append(row)
+
+    n = len(tasks)
+    leaderboard = []
+    for m in tf_models:
+        mid = m[mid_key]
+        d   = per_model[mid]
+        lat_sorted = sorted(d["lat"])
+        p95 = lat_sorted[min(n - 1, int(round(0.95 * (n - 1))))]
+        leaderboard.append({
+            "model":                  mid,
+            "preset":                 f"{m['preset']} / {m['instance_type']}",
+            "accuracy":               round(d["score"] / n, 4),
+            "correct":                d["correct"],
+            "n":                      n,
+            "mean_latency_s":         round(statistics.mean(d["lat"]), 3),
+            "p95_latency_s":          round(p95, 3),
+            "total_out_tokens":       sum(d["out_tokens"]),
+            # TF bills per token; per-GPU-hour serving cost does not apply
+            "cost_per_1k_tokens_usd": None,
+            "total_run_cost_usd":     None,
+        })
+    leaderboard.sort(key=lambda r: r["accuracy"], reverse=True)
+
+    return {
+        "meta": {
+            "mode":      "tokenfactory",
+            "task":      task_file or "mixed",
+            "task_name": task_label,
+            "scorer":    first_scorer,
+            "n_models":  len(tf_models),
+            "n_tasks":   n,
+            "benchmark": task_label,
+        },
+        "leaderboard": leaderboard,
+        "samples":     samples,
+    }
+
+
+def _run_endpoint(tasks, models, task_label, first_scorer, task_file):
+    """Self-hosted Nebius Serverless Endpoints — creates and deletes GPU VMs per model."""
     import openai
     from src import orchestrator, storage
 
@@ -361,7 +467,6 @@ def _run_live(tasks, models, task_label, first_scorer, task_file):
 
     per_model = {m[mid_key]: {"lat": [], "cost_per_1k": [], "req_cost": [],
                                "score": 0.0, "correct": 0} for m in models}
-    # answers_by_task[task_id][mid] = answer dict
     answers_by_task = {task["id"]: {} for task in tasks}
     scorer_by_task  = {task["id"]: task.get("scorer", "programmatic") for task in tasks}
 
@@ -407,7 +512,6 @@ def _run_live(tasks, models, task_label, first_scorer, task_file):
                     "out_tokens": out_tokens,
                     **detail,
                 }
-                # accumulate token count for cost calculation
                 per_model[mid].setdefault("out_tokens_total", 0)
                 per_model[mid]["out_tokens_total"] += out_tokens
 
@@ -419,13 +523,12 @@ def _run_live(tasks, models, task_label, first_scorer, task_file):
         total_tokens  = per_model[mid].get("out_tokens_total", 1)
         c1k           = cost_per_1k_tokens(serving_cost, total_tokens)
 
-        per_model[mid]["req_cost"]   = [serving_cost]
+        per_model[mid]["req_cost"]    = [serving_cost]
         per_model[mid]["cost_per_1k"] = [c1k]
 
         print(f"  {mid}: serving cost ${serving_cost:.4f}, "
               f"${c1k:.5f}/1k tokens", flush=True)
 
-    # Assemble samples in task order
     samples = []
     for task in tasks:
         samples.append({
@@ -438,7 +541,7 @@ def _run_live(tasks, models, task_label, first_scorer, task_file):
     n       = len(tasks)
     results = {
         "meta": {
-            "mode":      "live",
+            "mode":      "endpoint",
             "task":      task_file or "mixed",
             "task_name": task_label,
             "scorer":    first_scorer,
@@ -450,7 +553,6 @@ def _run_live(tasks, models, task_label, first_scorer, task_file):
         "samples":     samples,
     }
 
-    # Upload to object storage if configured
     if os.environ.get("STORAGE_BUCKET") and os.environ.get("STORAGE_ENDPOINT"):
         try:
             storage.put_results(results)
