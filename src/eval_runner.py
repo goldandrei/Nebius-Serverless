@@ -269,10 +269,12 @@ def run(backend: str = "mock", task_file: str = None) -> dict:
         return _run_mock(tasks, models, task_label, first_scorer, task_file)
     elif backend == "tokenfactory":
         return _run_tokenfactory(tasks, models, task_label, first_scorer, task_file)
+    elif backend == "local":
+        return _run_local(tasks, task_label, first_scorer, task_file)
     elif backend == "endpoint":
         return _run_endpoint(tasks, models, task_label, first_scorer, task_file)
     else:
-        raise ValueError(f"Unknown backend {backend!r}; choose mock, tokenfactory, or endpoint")
+        raise ValueError(f"Unknown backend {backend!r}; choose mock, tokenfactory, local, or endpoint")
 
 
 def _build_leaderboard(models, per_model, mid_key, n_tasks):
@@ -447,6 +449,92 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file):
             "task_name": task_label,
             "scorer":    first_scorer,
             "n_models":  len(tf_models),
+            "n_tasks":   n,
+            "benchmark": task_label,
+        },
+        "leaderboard": leaderboard,
+        "samples":     samples,
+    }
+
+
+def _run_local(tasks, task_label, first_scorer, task_file):
+    """Local vLLM server — OpenAI-compatible, no endpoint creation, no cost tracking.
+
+    Env vars:
+      LOCAL_BASE_URL  (default http://localhost:8000/v1)
+      LOCAL_MODEL     (default Qwen/Qwen2.5-0.5B-Instruct)
+
+    Pass threshold: embedding cosine ≥ 0.70 is a correct answer for reference_match tasks
+    (the harness marks correct when score ≥ 0.5, which is conservative enough for cosine).
+    """
+    import openai
+
+    base_url = os.environ.get("LOCAL_BASE_URL", "http://localhost:8000/v1")
+    model_id = os.environ.get("LOCAL_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
+    embed    = _make_embed()
+
+    client    = openai.OpenAI(base_url=base_url, api_key="local")
+    mid_key   = "id"
+    per_model = {model_id: {"lat": [], "out_tokens": [], "score": 0.0, "correct": 0}}
+
+    samples = []
+    for task in tasks:
+        scorer_name = task.get("scorer", "programmatic")
+        row = {"q": task["input"], "expected": task_expected(task),
+               "scorer": scorer_name, "answers": {}}
+
+        msgs = []
+        if task.get("instruction"):
+            msgs.append({"role": "system", "content": task["instruction"]})
+        msgs.append({"role": "user", "content": task["input"]})
+
+        t0         = time.time()
+        resp       = client.chat.completions.create(model=model_id, messages=msgs, temperature=0)
+        lat        = time.time() - t0
+        raw        = resp.choices[0].message.content
+        out_tokens = resp.usage.completion_tokens
+
+        s, detail = scoring.score(raw, task, embed=embed)
+
+        per_model[model_id]["lat"].append(lat)
+        per_model[model_id]["out_tokens"].append(out_tokens)
+        per_model[model_id]["score"]   += s
+        per_model[model_id]["correct"] += int(s >= 0.5)
+
+        row["answers"][model_id] = {
+            "text":       raw,
+            "correct":    s >= 0.5,
+            "score":      round(s, 3),
+            "latency_s":  round(lat, 3),
+            "out_tokens": out_tokens,
+            **detail,
+        }
+        samples.append(row)
+
+    n = len(tasks)
+    d = per_model[model_id]
+    lat_sorted = sorted(d["lat"])
+    p95        = lat_sorted[min(n - 1, int(round(0.95 * (n - 1))))]
+    leaderboard = [{
+        "model":                  model_id,
+        "preset":                 "local / vLLM",
+        "accuracy":               round(d["score"] / n, 4),
+        "correct":                d["correct"],
+        "n":                      n,
+        "mean_latency_s":         round(statistics.mean(d["lat"]), 3),
+        "p95_latency_s":          round(p95, 3),
+        "total_out_tokens":       sum(d["out_tokens"]),
+        "cost_per_1k_tokens_usd": None,
+        "total_run_cost_usd":     None,
+    }]
+
+    return {
+        "meta": {
+            "mode":      "local",
+            "task":      task_file or "mixed",
+            "task_name": task_label,
+            "scorer":    first_scorer,
+            "n_models":  1,
             "n_tasks":   n,
             "benchmark": task_label,
         },
