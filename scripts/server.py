@@ -67,9 +67,9 @@ class Handler(BaseHTTPRequestHandler):
         body     = json.loads(self.rfile.read(length))
         selected = body.get("models", [])
         task     = body.get("task") or "assistant_commands"
-        backend  = body.get("backend", "mock")
+        backend  = body.get("backend", "tokenfactory")
 
-        if backend not in ("mock", "tokenfactory", "endpoint"):
+        if backend not in ("tokenfactory", "endpoint"):
             self._json({"error": f"Unknown backend {backend!r}"}, 400); return
         if not selected:
             self._json({"error": "No models selected"}, 400); return

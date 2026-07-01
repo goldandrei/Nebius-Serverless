@@ -1,12 +1,11 @@
-# Local vLLM Backend — Environment Notes
+# Local and mock backends removed — project runs on Nebius Serverless endpoints, with Token Factory as the judge/hosted layer.
 
-## What it is
+## Why local vLLM was removed
 
-`--backend local` points the eval harness at a self-hosted vLLM server via
-`LOCAL_BASE_URL` (default `http://localhost:8000/v1`) and `LOCAL_MODEL`.
-The code is implemented in `src/eval_runner._run_local` and works identically
-to `--backend tokenfactory` (OpenAI-compatible chat completions, wall-clock
-latency, completion token count, cost fields left null).
+The `--backend local` and `--backend mock` backends have been removed. The project
+now supports exactly two backends: `tokenfactory` (Nebius AI Studio hosted API) and
+`endpoint` (Nebius Serverless GPU endpoints). The local backend was attempted but
+never reliably worked due to the environment issues documented below.
 
 ## Why it didn't run in this dev environment
 
@@ -25,25 +24,8 @@ Root causes: Blackwell (sm_120) CUDA kernel compatibility with vLLM 0.24.0's
 bundled FlashInfer/FlashAttention, combined with the CUDA toolkit being absent
 from WSL2 (only the Windows driver stub `libcuda.so` is present, not `nvcc`).
 
-## How to make local vLLM work
+## Development workflow
 
-Requires a native Linux host (or WSL2 with a full CUDA toolkit install):
-
-```bash
-# Install CUDA toolkit matching your driver (e.g. CUDA 13.x for driver 610+)
-sudo apt-get install -y cuda-toolkit-13-0   # or whatever version matches
-
-# Then start the server:
-bash scripts/start_vllm_local.sh
-```
-
-`scripts/start_vllm_local.sh` serves `Qwen/Qwen2.5-0.5B-Instruct` with dev
-flags: `--gpu-memory-utilization 0.40 --max-model-len 2048 --max-num-seqs 8
---enforce-eager --port 8000`.
-
-## Development workflow used instead
-
-- **Iteration / scoring logic**: `--backend mock` (fully offline, deterministic)
 - **Real-model validation**: `--backend tokenfactory` (Nebius Token Factory API,
   no GPU provisioning needed, requires `NEBIUS_API_KEY`)
 - **Full cost+latency run**: `--backend endpoint` (creates Nebius Serverless
