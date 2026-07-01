@@ -221,6 +221,10 @@
     <div id="catalog-area"><p class="empty">Loading catalog…</p></div>
     <div class="run-bar">
       <span class="sel-count" id="sel-count">0 / 3 selected</span>
+      <select id="backend-sel" style="background:var(--panel2);border:1px solid var(--line);color:var(--dim);font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:7px;cursor:pointer;outline:none">
+        <option value="tokenfactory">Token Factory (hosted API)</option>
+        <option value="endpoint">Serverless Endpoint (GPU)</option>
+      </select>
       <button class="run-btn" id="run-btn" disabled>Run comparison</button>
       <span class="run-status" id="run-status"></span>
     </div>
@@ -556,7 +560,8 @@ function setStatus(msg, type) {
 }
 
 document.getElementById("run-btn").addEventListener("click", async () => {
-  const models = Array.from(document.querySelectorAll(".model-check:checked")).map(c => c.value);
+  const models  = Array.from(document.querySelectorAll(".model-check:checked")).map(c => c.value);
+  const backend = document.getElementById("backend-sel").value;
   if (!models.length) { setStatus("Select at least one model.", "err"); return; }
 
   const btn = document.getElementById("run-btn");
@@ -567,9 +572,12 @@ document.getElementById("run-btn").addEventListener("click", async () => {
     const res = await fetch("/api/run", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({models, task: selectedTask}),
+      body: JSON.stringify({models, task: selectedTask, backend}),
     });
-    if (!res.ok) throw new Error(await res.text());
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error((body && body.error) ? body.error : res.statusText);
+    }
     const results = await res.json();
     if (results.error) throw new Error(results.error);
     renderResults(results);
@@ -594,16 +602,24 @@ function renderResults(D) {
     return;
   }
 
+  const MODE_LABEL = {
+    tokenfactory: "Token Factory · Nebius AI Studio",
+    endpoint:     "Live · Nebius Serverless Endpoints",
+  };
   document.getElementById("eyebrow").textContent =
-    D.meta.mode === "live" ? "Live · Nebius Serverless" : "Local dry-run · mock endpoints";
+    MODE_LABEL[D.meta.mode] || `Nebius · ${D.meta.mode}`;
   document.getElementById("meta").innerHTML =
     `<b>${D.meta.n_models}</b> models &middot; <b>${D.meta.n_tasks}</b> rows &middot; ` +
     `benchmark <b>${esc(D.meta.task_name)}</b> &middot; mode <b>${esc(D.meta.mode)}</b>`;
 
   const isJudge   = D.meta.scorer === "llm_judge";
+  const hasCost   = lb.some(r => r.cost_per_1k_tokens_usd != null);
+  const fmt4      = v => v == null ? "&mdash;" : `$${v.toFixed(4)}`;
   const bestAcc   = Math.max(...lb.map(r=>r.accuracy));
   const bestLat   = Math.min(...lb.map(r=>r.mean_latency_s));
-  const bestCost  = Math.min(...lb.map(r=>r.cost_per_1k_tokens_usd));
+  const bestCost  = hasCost
+    ? Math.min(...lb.filter(r=>r.cost_per_1k_tokens_usd!=null).map(r=>r.cost_per_1k_tokens_usd))
+    : null;
   const modelIdx  = {};
   lb.forEach((r,i) => modelIdx[r.model] = i);
 
@@ -621,8 +637,8 @@ function renderResults(D) {
       <td class="${r.accuracy===bestAcc?'best':''}">${(r.accuracy*100).toFixed(1)}%</td>
       <td class="${r.mean_latency_s===bestLat?'best':''}">${r.mean_latency_s.toFixed(2)}s</td>
       <td>${r.p95_latency_s.toFixed(2)}s</td>
-      <td class="${r.cost_per_1k_tokens_usd===bestCost?'best':''}">$${r.cost_per_1k_tokens_usd.toFixed(4)}</td>
-      <td>$${r.total_run_cost_usd.toFixed(4)}</td>
+      <td class="${hasCost&&r.cost_per_1k_tokens_usd===bestCost?'best':''}">${fmt4(r.cost_per_1k_tokens_usd)}</td>
+      <td>${fmt4(r.total_run_cost_usd)}</td>
     </tr>`;
   }).join("");
 
@@ -723,8 +739,12 @@ function buildSamples(D) {
 
 // ── charts ────────────────────────────────────────────────────────────────────
 function buildScatter(lb, modelIdx) {
+  const hasCostData = lb.some(r => r.cost_per_1k_tokens_usd != null);
+  if (!hasCostData) {
+    return `<p class="empty" style="padding:20px 0;font-size:12px">Cost data not available for this backend.</p>`;
+  }
   const W=520,H=310,m={t:18,r:70,b:46,l:46};
-  const pts = lb.map(r=>({x:r.cost_per_1k_tokens_usd,y:r.accuracy,
+  const pts = lb.filter(r=>r.cost_per_1k_tokens_usd!=null).map(r=>({x:r.cost_per_1k_tokens_usd,y:r.accuracy,
     label:r.model.replace(/-instruct$/i,"").replace(/-it$/i,""),i:modelIdx[r.model]}));
   const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
   const xmin=Math.min(...xs)*.82,xmax=Math.max(...xs)*1.12;
