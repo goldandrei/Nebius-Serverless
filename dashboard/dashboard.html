@@ -583,18 +583,25 @@ function setStatus(msg, type) {
 let _pollTimer = null;
 
 function startProgressPoll() {
+  let tick = 0;
   _pollTimer = setInterval(async () => {
+    tick++;
+    const dots = ".".repeat((tick % 3) + 1);
     try {
       const r = await fetch("/api/progress");
       const p = await r.json();
-      if (p.running) {
+      if (p.running && p.n_items > 0) {
         const name = p.model ? esc(p.model.split("/").pop()) : "…";
         setStatus(
           `<span class="spinner"></span>` +
-          `item ${p.item_idx}/${p.n_items} &middot; model ${p.model_idx + 1}/${p.n_models} (${name})`
+          `item ${p.item_idx}/${p.n_items} &middot; model ${p.model_idx + 1}/${p.n_models} &middot; ${name}`
         );
+      } else {
+        setStatus(`<span class="spinner"></span>Queued${dots}`);
       }
-    } catch(e) { /* swallow */ }
+    } catch(e) {
+      setStatus(`<span class="spinner"></span>Starting${dots}`);
+    }
   }, 800);
 }
 

@@ -88,6 +88,15 @@ models:
            p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
            lat_mean: 7.80, lat_sd: 0.70}
 
+  - id: Qwen/Qwen3-32B
+    tokenfactory_ok: true
+    preset: gpu-h100-sxm
+    instance_type: 1gpu-20vcpu-200gb
+    rate_hr: 3.80
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
+           p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.05,
+           lat_mean: 5.50, lat_sd: 0.50}
+
   # ── Qwen 2.5-Coder ───────────────────────────────────────────────────────────
   - id: Qwen/Qwen2.5-Coder-7B-Instruct
     tokenfactory_ok: false
