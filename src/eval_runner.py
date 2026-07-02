@@ -144,11 +144,12 @@ def list_catalog(catalog_file: Path = CATALOG_FILE) -> None:
 
 # ── main eval loop ────────────────────────────────────────────────────────────
 
-def run(backend: str = "tokenfactory", task_file: str = None) -> dict:
+def run(backend: str = "tokenfactory", task_file: str = None, progress_cb=None) -> dict:
     """Run the eval harness.
 
     backend: "tokenfactory" — Nebius Token Factory hosted API (NEBIUS_API_KEY required)
              "endpoint"     — Nebius Serverless Endpoints: creates/deletes GPU VMs
+    progress_cb: optional callable(model, model_idx, n_models, item_idx, n_items)
     """
     tasks  = load_tasks(task_file=task_file)
     models = load_config()
@@ -158,7 +159,7 @@ def run(backend: str = "tokenfactory", task_file: str = None) -> dict:
     task_label   = task_meta.get(task_file, {}).get("name", task_file or "mixed") if task_file else "mixed"
 
     if backend == "tokenfactory":
-        return _run_tokenfactory(tasks, models, task_label, first_scorer, task_file)
+        return _run_tokenfactory(tasks, models, task_label, first_scorer, task_file, progress_cb)
     elif backend == "endpoint":
         return _run_endpoint(tasks, models, task_label, first_scorer, task_file)
     else:
@@ -189,19 +190,21 @@ def _build_leaderboard(models, per_model, mid_key, n_tasks):
     return leaderboard
 
 
-def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file):
+def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file, progress_cb=None):
     """Nebius Token Factory hosted API — no Serverless endpoints or jobs created."""
     import openai
 
     base_url = os.environ["NEBIUS_BASE_URL"]
     api_key  = os.environ["NEBIUS_API_KEY"]
 
+    skipped   = [m for m in models if not m.get("tokenfactory_ok")]
     tf_models = [m for m in models if m.get("tokenfactory_ok")]
     if not tf_models:
         raise ValueError(
             "No tokenfactory_ok models in current selection. "
-            "Add a model with tokenfactory_ok: true to config/models.yaml "
-            "(e.g. meta-llama/Llama-3.3-70B-Instruct)."
+            "Selected: " + ", ".join(m["id"] for m in models) + ". "
+            "Set tokenfactory_ok: true in config/catalog.yaml for models available on "
+            "Token Factory (e.g. meta-llama/Llama-3.3-70B-Instruct)."
         )
 
     client  = openai.OpenAI(base_url=base_url, api_key=api_key)
@@ -211,14 +214,18 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file):
     per_model = {m[mid_key]: {"lat": [], "out_tokens": [], "score": 0.0, "correct": 0}
                  for m in tf_models}
 
+    n = len(tasks)
     samples = []
-    for task in tasks:
+    for j, task in enumerate(tasks):
         scorer_name = task.get("scorer", "programmatic")
         row = {"q": task["input"], "expected": task_expected(task),
                "scorer": scorer_name, "answers": {}}
 
-        for m in tf_models:
+        for i, m in enumerate(tf_models):
             mid  = m[mid_key]
+            if progress_cb:
+                progress_cb(model=mid, model_idx=i, n_models=len(tf_models),
+                            item_idx=j + 1, n_items=n)
             msgs = []
             if task.get("instruction"):
                 msgs.append({"role": "system", "content": task["instruction"]})
@@ -249,7 +256,6 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file):
             }
         samples.append(row)
 
-    n = len(tasks)
     leaderboard = []
     for m in tf_models:
         mid = m[mid_key]
@@ -280,8 +286,12 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file):
             "n_tasks":   n,
             "benchmark": task_label,
         },
-        "leaderboard": leaderboard,
-        "samples":     samples,
+        "leaderboard":   leaderboard,
+        "samples":       samples,
+        "skipped_models": [
+            {"id": m["id"], "reason": "not tokenfactory_ok — not available on Token Factory"}
+            for m in skipped
+        ],
     }
 
 

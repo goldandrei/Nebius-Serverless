@@ -205,6 +205,15 @@ models:
            p_ref_err: 0.01, judge_score_mean: 0.94, judge_score_sd: 0.06,
            lat_mean: 4.20, lat_sd: 0.40}
 
+  - id: google/gemma-3-27b-it
+    tokenfactory_ok: true
+    preset: gpu-h100-sxm
+    instance_type: 1gpu-20vcpu-200gb
+    rate_hr: 3.80
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
+           p_ref_err: 0.01, judge_score_mean: 0.94, judge_score_sd: 0.06,
+           lat_mean: 4.20, lat_sd: 0.40}
+
   # ── SmolLM2 ───────────────────────────────────────────────────────────────────
   - id: HuggingFaceTB/SmolLM2-1.7B-Instruct
     tokenfactory_ok: false

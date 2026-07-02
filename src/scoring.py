@@ -68,7 +68,10 @@ def score_programmatic(answer: str, gold, compare: str = "exact") -> float:
             return 0.0
     if compare == "json_fields":
         try:
-            pred = json.loads(answer)
+            # Strip markdown code fences, then find the first {...} block
+            text = re.sub(r"```(?:json)?\s*", "", answer, flags=re.IGNORECASE).strip()
+            m = re.search(r"\{.*\}", text, re.DOTALL)
+            pred = json.loads(m.group() if m else text)
         except Exception:
             return 0.0
         return field_f1(gold, pred)
@@ -130,7 +133,9 @@ def _make_detail(scorer: str, answer: str, task_item: dict, s: float) -> dict:
         compare = task_item.get("compare", "exact")
         if compare == "json_fields":
             try:
-                json.loads(answer)
+                text = re.sub(r"```(?:json)?\s*", "", answer, flags=re.IGNORECASE).strip()
+                m = re.search(r"\{.*\}", text, re.DOTALL)
+                json.loads(m.group() if m else text)
                 return {"valid_json": True, "field_f1": round(s, 3)}
             except Exception:
                 return {"valid_json": False, "field_f1": 0.0}

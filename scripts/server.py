@@ -11,8 +11,13 @@ Local dev server for the eval dashboard.
 """
 import json
 import sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+# Shared progress state — written by the eval thread, read by poll requests
+_progress_lock = threading.Lock()
+_progress: dict = {"running": False}
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -44,6 +49,9 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/api/tasks":
             from src.eval_runner import available_tasks
             self._json(available_tasks())
+        elif p == "/api/progress":
+            with _progress_lock:
+                self._json(dict(_progress))
         elif p.startswith("/api/tasks/"):
             task_id = p[len("/api/tasks/"):]
             from src.eval_runner import _load_jsonl, DATA_DIR
@@ -80,9 +88,18 @@ class Handler(BaseHTTPRequestHandler):
                 "".join(f"  - {m}\n" for m in selected)
         (ROOT / "config" / "models.yaml").write_text(lines, encoding="utf-8")
 
+        with _progress_lock:
+            _progress.update({"running": True, "model": "", "model_idx": 0,
+                               "n_models": 0, "item_idx": 0, "n_items": 0})
+
+        def _progress_cb(**kw):
+            with _progress_lock:
+                _progress.update(kw)
+
         try:
             from src import eval_runner
-            results = eval_runner.run(backend=backend, task_file=task)
+            results = eval_runner.run(backend=backend, task_file=task,
+                                      progress_cb=_progress_cb)
             (ROOT / "results" / "results.json").write_text(
                 json.dumps(results, indent=2), encoding="utf-8"
             )
@@ -90,6 +107,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             import traceback
             self._json({"error": str(e), "trace": traceback.format_exc()}, 500)
+        finally:
+            with _progress_lock:
+                _progress["running"] = False
 
     def _handle_build(self):
         """Assemble JSONL from plain pieces — user never writes JSONL directly."""
@@ -184,7 +204,7 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 7860
-    httpd = HTTPServer(("localhost", port), Handler)
+    httpd = ThreadingHTTPServer(("localhost", port), Handler)
     print(f"Dashboard -> http://localhost:{port}")
     print("Ctrl+C to stop.\n")
     try:

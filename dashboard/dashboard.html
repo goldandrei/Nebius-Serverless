@@ -115,6 +115,9 @@
   .run-btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
   .run-status{font-family:var(--mono);font-size:12px;color:var(--dim)}
   .run-status.ok{color:var(--good)}.run-status.err{color:var(--bad)}
+  .skip-warn{margin-top:12px;padding:10px 14px;border:1px solid var(--amber);
+             border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--amber);
+             line-height:1.6}
   .spinner{display:inline-block;width:11px;height:11px;border:2px solid var(--line);
            border-top-color:var(--cyan);border-radius:50%;
            animation:spin .6s linear infinite;margin-right:5px;vertical-align:middle}
@@ -493,6 +496,10 @@ function populateBuilder(records, scorer) {
 // ── model picker ──────────────────────────────────────────────────────────────
 const FAMILY_ORDER = ["Qwen","DeepSeek","Llama","Mistral","Gemma","Phi","SmolLM","Other"];
 
+// Ordered list of checked model IDs — drives both the visual state and the POST body.
+// Never read from DOM checkboxes directly; always keep this in sync instead.
+let selectionOrder = [];
+
 function modelFamily(id) {
   const name = id.split("/")[1] || id;
   if (/^Qwen/i.test(name))               return "Qwen";
@@ -506,7 +513,8 @@ function modelFamily(id) {
 }
 
 function renderPicker(catalog, selection) {
-  const selSet = new Set(selection.slice(0, MAX_MODELS));
+  selectionOrder = selection.slice(0, MAX_MODELS);
+  const selSet = new Set(selectionOrder);
   const groups = {};
   for (const m of catalog) {
     const fam = modelFamily(m.id);
@@ -531,25 +539,38 @@ function renderPicker(catalog, selection) {
   }
   document.getElementById("catalog-area").innerHTML = html;
   document.querySelectorAll(".model-check").forEach(cb =>
-    cb.addEventListener("change", updateSelCount)
+    cb.addEventListener("change", onModelChange)
   );
   updateSelCount();
 }
 
+function onModelChange(e) {
+  const cb  = e.target;
+  const mid = cb.value;
+  if (cb.checked) {
+    selectionOrder.push(mid);
+    // At limit: auto-deselect the oldest so the new pick always lands
+    if (selectionOrder.length > MAX_MODELS) {
+      const evicted = selectionOrder.shift();
+      const evictedCb = Array.from(document.querySelectorAll(".model-check"))
+                             .find(c => c.value === evicted);
+      if (evictedCb) evictedCb.checked = false;
+    }
+  } else {
+    selectionOrder = selectionOrder.filter(id => id !== mid);
+  }
+  updateSelCount();
+}
+
 function updateSelCount() {
-  const checked  = document.querySelectorAll(".model-check:checked");
-  const n        = checked.length;
-  const atLimit  = n >= MAX_MODELS;
-  checked.forEach(cb => cb.closest(".model-item").classList.add("checked"));
-  document.querySelectorAll(".model-check:not(:checked)").forEach(cb => {
-    const item = cb.closest(".model-item");
-    item.classList.remove("checked");
-    item.classList.toggle("dimmed", atLimit);
-    cb.disabled = atLimit;
-    item.style.cursor = atLimit ? "default" : "";
+  // Sync visual checked state from selectionOrder — never from DOM checkbox .checked
+  const selSet = new Set(selectionOrder);
+  document.querySelectorAll(".model-check").forEach(cb => {
+    cb.closest(".model-item").classList.toggle("checked", selSet.has(cb.value));
   });
-  document.getElementById("sel-count").textContent = `${n} / ${MAX_MODELS} selected`;
-  document.getElementById("run-btn").disabled = n === 0;
+  document.getElementById("sel-count").textContent =
+    `${selectionOrder.length} / ${MAX_MODELS} selected`;
+  document.getElementById("run-btn").disabled = selectionOrder.length === 0;
 }
 
 // ── run ───────────────────────────────────────────────────────────────────────
@@ -559,14 +580,38 @@ function setStatus(msg, type) {
   el.innerHTML = msg;
 }
 
+let _pollTimer = null;
+
+function startProgressPoll() {
+  _pollTimer = setInterval(async () => {
+    try {
+      const r = await fetch("/api/progress");
+      const p = await r.json();
+      if (p.running) {
+        const name = p.model ? esc(p.model.split("/").pop()) : "…";
+        setStatus(
+          `<span class="spinner"></span>` +
+          `item ${p.item_idx}/${p.n_items} &middot; model ${p.model_idx + 1}/${p.n_models} (${name})`
+        );
+      }
+    } catch(e) { /* swallow */ }
+  }, 800);
+}
+
+function stopProgressPoll() {
+  clearInterval(_pollTimer);
+  _pollTimer = null;
+}
+
 document.getElementById("run-btn").addEventListener("click", async () => {
-  const models  = Array.from(document.querySelectorAll(".model-check:checked")).map(c => c.value);
+  const models  = [...selectionOrder];  // authoritative; matches exactly what the user sees checked
   const backend = document.getElementById("backend-sel").value;
   if (!models.length) { setStatus("Select at least one model.", "err"); return; }
 
   const btn = document.getElementById("run-btn");
   btn.disabled = true;
-  setStatus('<span class="spinner"></span>Running…');
+  setStatus('<span class="spinner"></span>Starting…');
+  startProgressPoll();
 
   try {
     const res = await fetch("/api/run", {
@@ -581,6 +626,12 @@ document.getElementById("run-btn").addEventListener("click", async () => {
     const results = await res.json();
     if (results.error) throw new Error(results.error);
     renderResults(results);
+    const skipped = results.skipped_models || [];
+    const skipHtml = skipped.length
+      ? `<div class="skip-warn">⚠ ${skipped.length} model(s) skipped — not available on Token Factory:<br>` +
+        skipped.map(s => `&nbsp;&nbsp;${esc(s.id)}: ${esc(s.reason)}`).join("<br>") + "</div>"
+      : "";
+    document.getElementById("results-section").insertAdjacentHTML("afterbegin", skipHtml);
     setStatus(
       `Done &mdash; <b>${results.meta.n_models}</b> models &middot; ` +
       `<b>${results.meta.n_tasks}</b> rows &middot; ${esc(results.meta.task_name)}`,
@@ -589,7 +640,8 @@ document.getElementById("run-btn").addEventListener("click", async () => {
   } catch(e) {
     setStatus("Error: " + esc(e.message), "err");
   } finally {
-    btn.disabled = document.querySelectorAll(".model-check:checked").length === 0;
+    stopProgressPoll();
+    btn.disabled = selectionOrder.length === 0;
   }
 });
 
