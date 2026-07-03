@@ -16,22 +16,41 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def _nebius_cmd(args: list[str]) -> list[str]:
+    """Build the OS-appropriate nebius command list."""
+    if sys.platform == "win32":
+        inner = 'export PATH="$HOME/.nebius/bin:$PATH"; nebius ' + shlex.join(args)
+        return ["wsl", "bash", "-c", inner]
+    return ["nebius", *args]
+
+
 def _run(*args) -> dict:
     """Run `nebius <args> --format json` and return parsed output."""
-    arg_list = list(args) + ["--format", "json"]
-
-    if sys.platform == "win32":
-        inner = (
-            'export PATH="$HOME/.nebius/bin:$PATH"; nebius '
-            + shlex.join(arg_list)
-        )
-        cmd = ["wsl", "bash", "-c", inner]
-    else:
-        cmd = ["nebius", *arg_list]
-
+    cmd = _nebius_cmd(list(args) + ["--format", "json"])
     r = subprocess.run(cmd, capture_output=True, text=True, check=True)
     text = r.stdout.strip()
     return json.loads(text) if text and text not in ("{}", "{}") else {}
+
+
+def _run_create_async(args: list[str]) -> str:
+    """
+    Run `nebius ai endpoint create --async` and return the endpoint ID.
+
+    With --async the CLI always prints text to stdout regardless of --format:
+      Token: <token>
+      Endpoint ID: aiendpoint-e00...
+    Parse the Endpoint ID line directly.
+    """
+    cmd = _nebius_cmd(args)
+    r = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    output = r.stdout + r.stderr
+    for line in output.splitlines():
+        line = line.strip()
+        if line.startswith("Endpoint ID:"):
+            return line.split(":", 1)[1].strip()
+    raise RuntimeError(
+        f"Could not find 'Endpoint ID:' in create output:\n{output}"
+    )
 
 
 def _project_id() -> str:
@@ -89,16 +108,7 @@ def create_endpoint(model_id: str, platform: str, preset: str,
     if hf_token:
         args += ["--env", f"HF_TOKEN={hf_token}"]
 
-    data = _run(*args)
-    # --async returns the operation; the resource_id is the endpoint id
-    endpoint_id = (
-        data.get("resource_id")
-        or data.get("metadata", {}).get("id")
-        or data.get("id")
-    )
-    if not endpoint_id:
-        raise RuntimeError(f"Could not extract endpoint ID from create response: {data}")
-
+    endpoint_id = _run_create_async(args)
     print(f"    created {endpoint_id} ({platform}/{preset})", flush=True)
     return endpoint_id
 
@@ -109,10 +119,14 @@ def get_endpoint(endpoint_id: str) -> dict:
 
 
 def _extract_url(data: dict) -> str | None:
-    """Extract the HTTPS base URL from an endpoint get response."""
+    """Extract the HTTPS base URL from an endpoint get/list response.
+
+    public_endpoints is a list of strings in the CLI JSON output:
+      "public_endpoints": ["https://port8000-<hash>.tunnel....nebius.cloud"]
+    """
     eps = data.get("status", {}).get("public_endpoints", [])
     for ep in eps:
-        url = ep.get("url", "")
+        url = ep if isinstance(ep, str) else ep.get("url", "")
         if url.startswith("https://"):
             return url.rstrip("/")
     return None

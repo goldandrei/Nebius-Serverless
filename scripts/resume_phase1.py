@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
-"""Phase 1 endpoint validation — creates endpoint, runs eval, deletes."""
-import datetime, json, os, sys, time
-from pathlib import Path
+"""
+Resume Phase 1 from an already-created Serverless endpoint.
 
-# Force UTF-8 output so reference strings with ₂, °, etc. print cleanly
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+The endpoint was created by the orchestrator's create_endpoint() call
+(nebius ai endpoint create --async ...) but the Python JSON-parse of
+the async response failed. The endpoint itself is live.
+
+This script resumes at wait_ready() and runs through eval + delete
+via the same orchestrator functions used in _run_endpoint().
+"""
+import datetime
+import json
+import os
+import sys
+import time
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 try:
     from dotenv import load_dotenv
@@ -16,47 +28,57 @@ try:
 except ImportError:
     pass
 
-API_KEY = os.environ["NEBIUS_API_KEY"]
-from src import orchestrator
+from src import orchestrator, scoring
+from src.eval_runner import _make_embed
 
-ENDPOINT_ID  = "6c94efa9-4a68-4d11-a85d-35b18a83f356"
-ROUTING_KEY  = "dedicated/meta-llama/Meta-Llama-3.1-8B-Instruct-fast-jwTqM6XSr5AG"
+ENDPOINT_ID  = "aiendpoint-e00sqvcjtk9yanbtse"
+AUTH_TOKEN   = "7c5fbf3f344af1e5e7958bb01866b29ce83be668bdaf4dcc35f8b6f62ccfb2c2"
+MODEL_ID     = "Qwen/Qwen2.5-0.5B-Instruct"
 RATE_HR      = 1.55
-# t_created from the API created_at field (UTC)
-T_CREATED_ISO = "2026-07-03T08:12:16.622265Z"
+# created_at from the API (UTC)
+T_CREATED_ISO = "2026-07-03T08:54:56.220789Z"
 
-def ts(t):
+
+def ts(t: float) -> str:
     return datetime.datetime.fromtimestamp(t, tz=datetime.timezone.utc).strftime("%H:%M:%S UTC")
 
-t_created = datetime.datetime.fromisoformat(T_CREATED_ISO.replace("Z", "+00:00")).timestamp()
 
-def load_tasks(n=3):
+def load_tasks(n: int = 3) -> list:
     path = ROOT / "data" / "factual_qa.jsonl"
     rows = [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
     return rows[:n]
 
+
+t_created = datetime.datetime.fromisoformat(T_CREATED_ISO.replace("Z", "+00:00")).timestamp()
+
 print("=" * 60)
-print("Phase 1 — Resuming with existing endpoint")
-print(f"  endpoint_id  = {ENDPOINT_ID}")
-print(f"  routing_key  = {ROUTING_KEY}")
-print(f"  t_created    = {ts(t_created)}")
+print("Phase 1 — Nebius Serverless AI Endpoint (real run)")
+print(f"  endpoint_id = {ENDPOINT_ID}")
+print(f"  model       = {MODEL_ID}")
+print(f"  t_created   = {ts(t_created)}")
 print("=" * 60)
 
-# ── wait ready ────────────────────────────────────────────────
-print("\n[1/3] Waiting for ready...")
+# Show current state
+print("\nCurrent endpoint state:")
+ep = orchestrator.get_endpoint(ENDPOINT_ID)
+print(f"  state           = {ep.get('status', {}).get('state')}")
+print(f"  public_endpoint = {ep.get('status', {}).get('public_endpoints', [])}")
+
+results = []
 try:
-    base_url = orchestrator.wait_ready(ENDPOINT_ID, timeout_s=900)
+    # ── wait_ready via orchestrator ───────────────────────────────
+    print("\n[1/3] orchestrator.wait_ready() ...")
+    base_url = orchestrator.wait_ready(ENDPOINT_ID, AUTH_TOKEN, timeout_s=900)
     t_ready  = time.time()
-    deploy_min = (t_ready - t_created) / 60
-    print(f"  t_ready      = {ts(t_ready)}")
-    print(f"  deploy time  = {deploy_min:.1f} min")
+    print(f"  base_url = {base_url}")
+    print(f"  t_ready  = {ts(t_ready)}  (+{(t_ready - t_created)/60:.1f} min from create)")
 
     # ── run 3 factual_qa items ────────────────────────────────────
-    print("\n[2/3] Running 3 factual_qa items...")
+    print("\n[2/3] Running 3 factual_qa items ...")
     import openai
-    client = openai.OpenAI(base_url=base_url, api_key=API_KEY)
+    embed  = _make_embed()
+    client = openai.OpenAI(base_url=f"{base_url}/v1", api_key=AUTH_TOKEN)
     tasks  = load_tasks(3)
-    results = []
 
     for i, task in enumerate(tasks, 1):
         msgs = []
@@ -66,35 +88,48 @@ try:
 
         t0   = time.time()
         resp = client.chat.completions.create(
-            model=ROUTING_KEY, messages=msgs, temperature=0
+            model=MODEL_ID, messages=msgs, temperature=0
         )
         lat        = time.time() - t0
         raw        = resp.choices[0].message.content.strip()
         out_tokens = resp.usage.completion_tokens
         in_tokens  = resp.usage.prompt_tokens
 
+        # Simple lexical correctness check (reference_match uses embedding)
         reference = task.get("reference", "")
-        correct = reference.lower()[:20] in raw.lower() if reference else False
+        # check if key phrase from reference appears in answer
+        key = reference.split("—")[0].split(".")[0].strip()[:30].lower()
+        correct = key in raw.lower() if key else False
 
-        print(f"\n  Item {i}:")
-        print(f"    Q:   {task['input']}")
-        print(f"    A:   {raw[:200]}")
-        print(f"    ref: {reference[:100]}")
-        print(f"    ok={correct}  lat={lat:.2f}s  in={in_tokens}  out={out_tokens}")
-        results.append({"correct": correct, "lat": lat, "out_tokens": out_tokens, "in_tokens": in_tokens})
+        s, _ = scoring.score(raw, task)   # full scorer without embed
+        correct = s >= 0.5
+
+        print(f"\n  Item {i}/{len(tasks)}:")
+        print(f"    Q:     {task['input']}")
+        print(f"    A:     {raw}")
+        print(f"    ref:   {reference[:120]}")
+        print(f"    score={s:.3f}  correct={correct}  lat={lat:.2f}s  "
+              f"in={in_tokens}  out={out_tokens}")
+        results.append({"score": s, "correct": correct, "lat": lat,
+                        "out_tokens": out_tokens, "in_tokens": in_tokens})
 
     t_eval_done = time.time()
 
 finally:
-    # ── delete ────────────────────────────────────────────────────
-    print("\n[3/3] Deleting endpoint...")
+    # ── delete via orchestrator ───────────────────────────────────
+    print("\n[3/3] orchestrator.delete_endpoint() ...")
     orchestrator.delete_endpoint(ENDPOINT_ID)
 
-# ── verify none remain ────────────────────────────────────────
+# ── verify teardown ───────────────────────────────────────────────
 remaining = orchestrator.list_endpoints()
-print(f"\n  Remaining endpoints: {len(remaining)}")
+active = [e for e in remaining
+          if e.get("status", {}).get("state") not in ("DELETING", "DELETED")]
+print(f"\nRemaining active endpoints: {len(active)}")
+for e in remaining:
+    st = e.get("status", {}).get("state", "?")
+    print(f"  {e['metadata']['id']} [{st}]")
 
-# ── cost report ───────────────────────────────────────────────
+# ── cost report ───────────────────────────────────────────────────
 deploy_s    = t_ready - t_created
 eval_s      = t_eval_done - t_ready
 total_s     = t_eval_done - t_created
@@ -103,24 +138,29 @@ eval_cost   = eval_s   / 3600 * RATE_HR
 total_cost  = total_s  / 3600 * RATE_HR
 total_out   = sum(r["out_tokens"] for r in results) or 1
 c1k_steady  = eval_cost / total_out * 1000
-
-n_correct = sum(r["correct"] for r in results)
-accuracy  = n_correct / len(results) if results else 0
+n_correct   = sum(r["correct"] for r in results)
+accuracy    = n_correct / len(results) if results else 0
+mean_lat    = sum(r["lat"] for r in results) / len(results) if results else 0
 
 print()
 print("=" * 60)
-print("PHASE 1 RESULTS")
+print("PHASE 1 RESULTS  — Nebius Serverless AI Endpoint")
 print("=" * 60)
+print(f"  endpoint_id = {ENDPOINT_ID}")
+print(f"  model       = {MODEL_ID}")
+print(f"  platform    = gpu-l40s-a / 1gpu-8vcpu-32gb")
+print()
 print(f"  t_created   = {ts(t_created)}")
-print(f"  t_ready     = {ts(t_ready)}  (+{deploy_s/60:.1f} min)")
-print(f"  t_eval_done = {ts(t_eval_done)}  (+{eval_s/60:.1f} min from ready)")
+print(f"  t_ready     = {ts(t_ready)}   (+{deploy_s/60:.1f} min)")
+print(f"  t_eval_done = {ts(t_eval_done)}   (+{eval_s:.0f}s from ready)")
 print()
-print(f"  deploy time = {deploy_s/60:.1f} min  → deploy_cost  = ${deploy_cost:.4f}")
-print(f"  eval time   = {eval_s:.0f} s        → eval_cost    = ${eval_cost:.6f}")
-print(f"  total                          total_cost    = ${total_cost:.4f}")
-print(f"  output tokens = {total_out}           $/1K tok (ss) = ${c1k_steady:.5f}")
+print(f"  deploy cost = {deploy_s/60:.1f} min × ${RATE_HR}/hr  =  ${deploy_cost:.4f}")
+print(f"  eval cost   = {eval_s:.0f}s × ${RATE_HR}/hr        =  ${eval_cost:.6f}")
+print(f"  total cost  = {total_s/60:.1f} min × ${RATE_HR}/hr  =  ${total_cost:.4f}")
+print(f"  output tok  = {total_out} tokens")
+print(f"  $/1K tok (steady-state eval)    =  ${c1k_steady:.5f}")
 print()
-print(f"  accuracy = {n_correct}/{len(results)} = {accuracy:.0%}")
+print(f"  accuracy    = {n_correct}/{len(results)} = {accuracy:.0%}")
+print(f"  mean lat    = {mean_lat:.2f}s per item")
 print()
-print("Endpoint deleted. No remaining endpoints.")
-print("Phase 1 complete — ready for Phase 2.")
+print("Endpoint deleted. Phase 1 milestone complete.")
