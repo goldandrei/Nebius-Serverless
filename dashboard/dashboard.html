@@ -626,14 +626,13 @@ function startProgressPoll() {
     tick++;
     const dots = ".".repeat((tick % 3) + 1);
     try {
-      const r = await fetch("/api/progress");
-      const p = await r.json();
+      const p = await fetch("/api/progress").then(r => r.json());
       if (p.done && !p.running) {
-        // Server confirmed run is complete — stop polling; /api/run response handles Done text
+        // waitForDone() handles completion — poll just keeps the spinner live
         stopProgressPoll();
         return;
       }
-      if (!p.running) return; // startup race — don't overwrite anything
+      if (!p.running) return; // startup race — don't overwrite
       if (p.n_items > 0) {
         const name = p.model ? esc(p.model.split("/").pop()) : "…";
         setStatus(
@@ -641,7 +640,7 @@ function startProgressPoll() {
           `item ${p.item_idx}/${p.n_items} &middot; model ${p.model_idx + 1}/${p.n_models} &middot; ${name}`
         );
       } else {
-        setStatus(`<span class="spinner"></span>Starting${dots}`);
+        setStatus(`<span class="spinner"></span>Deploying endpoint${dots}`);
       }
     } catch(e) { /* network hiccup — keep existing status */ }
   }, 800);
@@ -659,9 +658,10 @@ document.getElementById("run-btn").addEventListener("click", async () => {
   const btn = document.getElementById("run-btn");
   btn.disabled = true;
   setStatus('<span class="spinner"></span>Starting…');
-  startProgressPoll();
 
   try {
+    // POST returns immediately with {"status":"started"} — eval runs in background thread.
+    // Endpoint deploys take 10+ minutes; blocking the HTTP connection would timeout.
     const res = await fetch("/api/run", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -671,28 +671,60 @@ document.getElementById("run-btn").addEventListener("click", async () => {
       const body = await res.json().catch(() => null);
       throw new Error((body && body.error) ? body.error : res.statusText);
     }
-    const results = await res.json();
-    if (results.error) throw new Error(results.error);
-    stopProgressPoll(); // stop before rendering — prevents a late poll tick overwriting Done
-    renderResults(results);
-    const routing = results.meta && results.meta.routing;
-    const epCount = routing ? routing.endpoint.length : 0;
-    const tfCount = routing ? routing.tokenfactory.length : 0;
-    const routeNote = routing
-      ? ` &middot; ${epCount} endpoint + ${tfCount} hosted`
-      : "";
-    setStatus(
-      `Done &mdash; <b>${results.meta.n_models}</b> models &middot; ` +
-      `<b>${results.meta.n_tasks}</b> rows &middot; ${esc(results.meta.task_name)}${routeNote}`,
-      "ok"
-    );
+    const started = await res.json();
+    if (started.error) throw new Error(started.error);
+
+    // Poll /api/progress until done, then fetch results from /results.json
+    startProgressPoll();
+    await waitForDone();
   } catch(e) {
     stopProgressPoll();
     setStatus("Error: " + esc(e.message), "err");
-  } finally {
     btn.disabled = selectionOrder.length === 0;
   }
 });
+
+async function waitForDone() {
+  const btn = document.getElementById("run-btn");
+  // Poll every 2s until done
+  while (true) {
+    await new Promise(r => setTimeout(r, 2000));
+    let p;
+    try { p = await fetch("/api/progress").then(r => r.json()); }
+    catch(e) { continue; }  // transient network hiccup
+
+    if (p.done && !p.running) {
+      stopProgressPoll();
+      if (p.error) {
+        setStatus("Error: " + esc(p.error), "err");
+        btn.disabled = selectionOrder.length === 0;
+        return;
+      }
+      // Fetch results from disk
+      try {
+        const rr = await fetch("/results.json");
+        if (!rr.ok) throw new Error("results.json not found");
+        const results = await rr.json();
+        renderResults(results);
+        const routing = results.meta && results.meta.routing;
+        const epCount = routing ? routing.endpoint.length : 0;
+        const tfCount = routing ? routing.tokenfactory.length : 0;
+        const routeNote = routing
+          ? ` &middot; ${epCount} endpoint + ${tfCount} hosted`
+          : "";
+        setStatus(
+          `Done &mdash; <b>${results.meta.n_models}</b> models &middot; ` +
+          `<b>${results.meta.n_tasks}</b> rows &middot; ${esc(results.meta.task_name)}${routeNote}`,
+          "ok"
+        );
+      } catch(e) {
+        setStatus("Error loading results: " + esc(e.message), "err");
+      }
+      btn.disabled = selectionOrder.length === 0;
+      return;
+    }
+  }
+}
 
 // ── results rendering ─────────────────────────────────────────────────────────
 function renderResults(D) {

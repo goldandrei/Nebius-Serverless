@@ -80,9 +80,10 @@ def _load_prices_at_startup() -> None:
         print(f"  [prices] Run: python scripts/update_prices.py")
 
 
-# Shared progress state — written by the eval thread, read by poll requests
+# Shared progress + run-guard state
 _progress_lock = threading.Lock()
 _progress: dict = {"running": False}
+_run_lock = threading.Lock()   # prevents concurrent evals (one at a time)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -158,32 +159,48 @@ class Handler(BaseHTTPRequestHandler):
         if len(selected) > 3:
             self._json({"error": "Maximum 3 models per comparison"}, 400); return
 
+        # Reject if a run is already in progress
+        if not _run_lock.acquire(blocking=False):
+            self._json({"error": "A run is already in progress — wait for it to finish."}, 409)
+            return
+
         lines = "# Updated by dashboard picker.\ncompare:\n" + \
                 "".join(f"  - {m}\n" for m in selected)
         (ROOT / "config" / "models.yaml").write_text(lines, encoding="utf-8")
 
         with _progress_lock:
-            _progress.update({"running": True, "done": False, "model": "",
-                               "model_idx": 0, "n_models": 0, "item_idx": 0, "n_items": 0})
+            _progress.update({"running": True, "done": False, "error": None,
+                               "model": "", "model_idx": 0, "n_models": 0,
+                               "item_idx": 0, "n_items": 0})
 
         def _progress_cb(**kw):
             with _progress_lock:
                 _progress.update(kw)
 
-        try:
-            from src import eval_runner
-            results = eval_runner.run(task_file=task,
-                                      progress_cb=_progress_cb, prices=_prices_cache)
-            (ROOT / "results" / "results.json").write_text(
-                json.dumps(results, indent=2), encoding="utf-8"
-            )
-            self._json(results)
-        except Exception as e:
-            import traceback
-            self._json({"error": str(e), "trace": traceback.format_exc()}, 500)
-        finally:
-            with _progress_lock:
-                _progress.update({"running": False, "done": True})
+        def _run_eval():
+            try:
+                from src import eval_runner
+                results = eval_runner.run(task_file=task,
+                                          progress_cb=_progress_cb, prices=_prices_cache)
+                (ROOT / "results" / "results.json").write_text(
+                    json.dumps(results, indent=2), encoding="utf-8"
+                )
+                with _progress_lock:
+                    _progress.update({"running": False, "done": True, "error": None})
+            except Exception as e:
+                import traceback
+                err = str(e)
+                tr  = traceback.format_exc()
+                print(f"\n[run error] {err}\n{tr}", flush=True)
+                with _progress_lock:
+                    _progress.update({"running": False, "done": True,
+                                      "error": err, "trace": tr})
+            finally:
+                _run_lock.release()
+
+        # Start eval in background thread; return immediately so HTTP doesn't timeout
+        threading.Thread(target=_run_eval, daemon=True).start()
+        self._json({"status": "started"})
 
     def _handle_build(self):
         """Assemble JSONL from plain pieces — user never writes JSONL directly."""
