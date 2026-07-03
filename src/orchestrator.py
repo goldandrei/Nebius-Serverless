@@ -132,7 +132,7 @@ def _extract_url(data: dict) -> str | None:
     return None
 
 
-def wait_ready(endpoint_id: str, auth_token: str, timeout_s: int = 900) -> str:
+def wait_ready(endpoint_id: str, auth_token: str, timeout_s: int = 1800) -> str:
     """
     Poll until the endpoint is RUNNING and the model weights are loaded.
     Returns the HTTPS base URL (without /v1 suffix).
