@@ -182,9 +182,11 @@ def _build_leaderboard(models, per_model, mid_key, n_tasks):
         d   = per_model[mid]
         lat_sorted = sorted(d["lat"])
         p95 = lat_sorted[min(n_tasks - 1, int(round(0.95 * (n_tasks - 1))))]
-        leaderboard.append({
+        gpu   = m.get("endpoint_gpu_type", m.get("preset", ""))
+        inst  = m.get("instance_type", f"{m.get('endpoint_gpu_count', 1)}×GPU")
+        row = {
             "model":                   mid,
-            "preset":                  f"{m['preset']} / {m['instance_type']}",
+            "preset":                  f"{gpu} / {inst}",
             "cost_basis":              "self-hosted",
             "accuracy":                round(d["score"] / n_tasks, 4),
             "correct":                 d["correct"],
@@ -193,7 +195,17 @@ def _build_leaderboard(models, per_model, mid_key, n_tasks):
             "p95_latency_s":           round(p95, 3),
             "cost_per_1k_tokens_usd":  round(statistics.mean(d["cost_per_1k"]), 5),
             "total_run_cost_usd":      round(sum(d["req_cost"]), 5),
-        })
+        }
+        # Include deploy/eval cost split when timestamps were recorded
+        if "deploy_cost" in d:
+            row.update({
+                "t_created":       d["t_created"],
+                "t_ready":         d["t_ready"],
+                "t_eval_done":     d["t_eval_done"],
+                "deploy_cost_usd": round(d["deploy_cost"], 6),
+                "eval_cost_usd":   round(d["eval_cost"], 6),
+            })
+        leaderboard.append(row)
     leaderboard.sort(key=lambda r: r["accuracy"], reverse=True)
     return leaderboard
 
@@ -338,33 +350,43 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
 
 
 def _run_endpoint(tasks, models, task_label, first_scorer, task_file):
-    """Nebius Serverless Endpoints — creates and deletes GPU VMs per model."""
+    """Nebius Serverless Endpoints — creates and deletes GPU endpoints per model."""
     import openai
     from src import orchestrator, storage
 
-    mid_key    = "id"
-    subnet_id  = os.environ["NEBIUS_SUBNET_ID"]
-    auth_token = secrets.token_hex(32)
-    embed      = _make_embed()
+    mid_key  = "id"
+    api_key  = os.environ["NEBIUS_API_KEY"]
+    embed    = _make_embed()
 
     per_model = {m[mid_key]: {"lat": [], "cost_per_1k": [], "req_cost": [],
-                               "score": 0.0, "correct": 0} for m in models}
+                               "score": 0.0, "correct": 0,
+                               "out_tokens_total": 0} for m in models}
     answers_by_task = {task["id"]: {} for task in tasks}
     scorer_by_task  = {task["id"]: task.get("scorer", "programmatic") for task in tasks}
 
     for m in models:
         mid = m[mid_key]
-        print(f"\n[{mid}] creating endpoint...", flush=True)
-        endpoint_id = orchestrator.create_endpoint(
-            m["id"], m["preset"], m["instance_type"], subnet_id, auth_token
+
+        model_name  = m.get("endpoint_model_name", m["id"])
+        flavor_name = m.get("endpoint_flavor", "base")
+        gpu_type    = m.get("endpoint_gpu_type", "gpu-l40s-d")
+        gpu_count   = m.get("endpoint_gpu_count", 1)
+        region      = m.get("endpoint_region",
+                            os.environ.get("NEBIUS_REGION", "eu-north1"))
+        rate_hr     = m.get("rate_hr", 1.55)
+
+        print(f"\n[{mid}] creating endpoint ({gpu_type} × {gpu_count}, {region})...",
+              flush=True)
+        t_created = time.time()
+        endpoint_id, routing_key = orchestrator.create_endpoint(
+            model_name, flavor_name, gpu_type, gpu_count, region
         )
-        t_up = time.time()
 
         try:
-            base_url = orchestrator.wait_ready(endpoint_id, auth_token)
-            client   = openai.OpenAI(
-                base_url=f"{base_url}/v1", api_key=auth_token
-            )
+            base_url = orchestrator.wait_ready(endpoint_id)
+            t_ready  = time.time()
+
+            client = openai.OpenAI(base_url=base_url, api_key=api_key)
 
             for task in tasks:
                 msgs = []
@@ -374,7 +396,7 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file):
 
                 t0   = time.time()
                 resp = client.chat.completions.create(
-                    model=m["id"], messages=msgs, temperature=0
+                    model=routing_key, messages=msgs, temperature=0
                 )
                 lat        = time.time() - t0
                 raw        = resp.choices[0].message.content
@@ -383,33 +405,49 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file):
                 s, detail = scoring.score(raw, task, embed=embed)
 
                 per_model[mid]["lat"].append(lat)
-                per_model[mid]["score"]   += s
-                per_model[mid]["correct"] += int(s >= 0.5)
+                per_model[mid]["score"]            += s
+                per_model[mid]["correct"]          += int(s >= 0.5)
+                per_model[mid]["out_tokens_total"] += out_tokens
 
                 answers_by_task[task["id"]][mid] = {
-                    "text":      raw,
-                    "correct":   s >= 0.5,
-                    "score":     round(s, 3),
-                    "latency_s": round(lat, 3),
+                    "text":       raw,
+                    "correct":    s >= 0.5,
+                    "score":      round(s, 3),
+                    "latency_s":  round(lat, 3),
                     "out_tokens": out_tokens,
                     **detail,
                 }
-                per_model[mid].setdefault("out_tokens_total", 0)
-                per_model[mid]["out_tokens_total"] += out_tokens
 
         finally:
             orchestrator.delete_endpoint(endpoint_id)
 
-        t_down        = time.time()
-        serving_cost  = endpoint_cost(t_up, t_down, m["rate_hr"])
-        total_tokens  = per_model[mid].get("out_tokens_total", 1)
-        c1k           = cost_per_1k_tokens(serving_cost, total_tokens)
+        t_eval_done = time.time()
 
-        per_model[mid]["req_cost"]    = [serving_cost]
-        per_model[mid]["cost_per_1k"] = [c1k]
+        deploy_cost = (t_ready - t_created) / 3600 * rate_hr
+        eval_cost   = (t_eval_done - t_ready) / 3600 * rate_hr
+        total_cost  = (t_eval_done - t_created) / 3600 * rate_hr
+        total_out   = per_model[mid]["out_tokens_total"] or 1
+        c1k         = eval_cost / total_out * 1000
 
-        print(f"  {mid}: serving cost ${serving_cost:.4f}, "
-              f"${c1k:.5f}/1k tokens", flush=True)
+        per_model[mid].update({
+            "t_created":    t_created,
+            "t_ready":      t_ready,
+            "t_eval_done":  t_eval_done,
+            "deploy_cost":  deploy_cost,
+            "eval_cost":    eval_cost,
+            "total_cost":   total_cost,
+            "req_cost":     [total_cost],
+            "cost_per_1k":  [c1k],
+        })
+
+        deploy_min = (t_ready - t_created) / 60
+        eval_min   = (t_eval_done - t_ready) / 60
+        print(
+            f"  {mid}: deploy {deploy_min:.1f} min (${deploy_cost:.4f})  "
+            f"eval {eval_min:.1f} min (${eval_cost:.4f})  "
+            f"total ${total_cost:.4f}  ${c1k:.5f}/1k tok",
+            flush=True,
+        )
 
     samples = []
     for task in tasks:

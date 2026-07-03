@@ -156,6 +156,23 @@ models:
            p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
            lat_mean: 9.00, lat_sd: 0.90}
 
+  # ── Llama 3.1 8B fast — confirmed on dedicated endpoint (L40S-D, flavor=base) ─
+  # Template: meta-llama/Meta-Llama-3.1-8B-Instruct-fast
+  # Cheapest text2text model on L40S; used for Phase 1 endpoint validation.
+  - id: meta-llama/Meta-Llama-3.1-8B-Instruct-fast
+    tokenfactory_ok: false
+    endpoint_model_name: meta-llama/Meta-Llama-3.1-8B-Instruct-fast
+    endpoint_flavor: base
+    endpoint_gpu_type: gpu-l40s-d
+    endpoint_gpu_count: 1
+    endpoint_region: eu-north1
+    preset: gpu-l40s-d
+    instance_type: 1×L40S-D
+    rate_hr: 1.55
+    mock: {p_bad_json: 0.00, p_wrong_intent: 0.02, p_slot_err: 0.08,
+           p_ref_err: 0.05, judge_score_mean: 0.80, judge_score_sd: 0.09,
+           lat_mean: 1.50, lat_sd: 0.18}
+
   # ── Llama 3.3 — confirmed on Token Factory ───────────────────────────────────
   - id: meta-llama/Llama-3.3-70B-Instruct
     gated: true
