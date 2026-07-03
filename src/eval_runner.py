@@ -178,6 +178,7 @@ def _build_leaderboard(models, per_model, mid_key, n_tasks):
         leaderboard.append({
             "model":                   mid,
             "preset":                  f"{m['preset']} / {m['instance_type']}",
+            "cost_basis":              "self-hosted",
             "accuracy":                round(d["score"] / n_tasks, 4),
             "correct":                 d["correct"],
             "n":                       n_tasks,
@@ -188,6 +189,19 @@ def _build_leaderboard(models, per_model, mid_key, n_tasks):
         })
     leaderboard.sort(key=lambda r: r["accuracy"], reverse=True)
     return leaderboard
+
+
+def _load_prices(prices_file: Path = None) -> dict:
+    """Load per-model token prices from prices.yaml. Returns {} if file absent or malformed."""
+    f = prices_file or (ROOT / "config" / "prices.yaml")
+    if not f.exists():
+        return {}
+    try:
+        with open(f, encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+        return data.get("tokenfactory", {}) or {}
+    except Exception:
+        return {}
 
 
 def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file, progress_cb=None):
@@ -210,8 +224,9 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file, progre
     client  = openai.OpenAI(base_url=base_url, api_key=api_key)
     mid_key = "id"
     embed   = _make_embed()
+    prices  = _load_prices()
 
-    per_model = {m[mid_key]: {"lat": [], "out_tokens": [], "score": 0.0, "correct": 0}
+    per_model = {m[mid_key]: {"lat": [], "in_tokens": [], "out_tokens": [], "score": 0.0, "correct": 0}
                  for m in tf_models}
 
     n = len(tasks)
@@ -237,11 +252,13 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file, progre
             )
             lat        = time.time() - t0
             raw        = resp.choices[0].message.content
+            in_tokens  = resp.usage.prompt_tokens
             out_tokens = resp.usage.completion_tokens
 
             s, detail = scoring.score(raw, task, embed=embed)
 
             per_model[mid]["lat"].append(lat)
+            per_model[mid]["in_tokens"].append(in_tokens)
             per_model[mid]["out_tokens"].append(out_tokens)
             per_model[mid]["score"]   += s
             per_model[mid]["correct"] += int(s >= 0.5)
@@ -251,6 +268,7 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file, progre
                 "correct":    s >= 0.5,
                 "score":      round(s, 3),
                 "latency_s":  round(lat, 3),
+                "in_tokens":  in_tokens,
                 "out_tokens": out_tokens,
                 **detail,
             }
@@ -262,17 +280,33 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file, progre
         d   = per_model[mid]
         lat_sorted = sorted(d["lat"])
         p95 = lat_sorted[min(n - 1, int(round(0.95 * (n - 1))))]
+
+        total_in  = sum(d["in_tokens"])
+        total_out = sum(d["out_tokens"])
+        total_tok = total_in + total_out
+        p = prices.get(mid, {})
+        p_in  = p.get("price_in_per_1m")
+        p_out = p.get("price_out_per_1m")
+        if p_in is not None and p_out is not None and total_tok > 0:
+            run_cost = (total_in * p_in + total_out * p_out) / 1_000_000
+            c1k      = run_cost / total_tok * 1000
+        else:
+            run_cost = None
+            c1k      = None
+
         leaderboard.append({
             "model":                  mid,
             "preset":                 f"{m['preset']} / {m['instance_type']}",
+            "cost_basis":             "hosted",
             "accuracy":               round(d["score"] / n, 4),
             "correct":                d["correct"],
             "n":                      n,
             "mean_latency_s":         round(statistics.mean(d["lat"]), 3),
             "p95_latency_s":          round(p95, 3),
-            "total_out_tokens":       sum(d["out_tokens"]),
-            "cost_per_1k_tokens_usd": None,
-            "total_run_cost_usd":     None,
+            "total_in_tokens":        total_in,
+            "total_out_tokens":       total_out,
+            "cost_per_1k_tokens_usd": round(c1k, 6) if c1k is not None else None,
+            "total_run_cost_usd":     round(run_cost, 6) if run_cost is not None else None,
         })
     leaderboard.sort(key=lambda r: r["accuracy"], reverse=True)
 

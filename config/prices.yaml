@@ -1,0 +1,19 @@
+# Token Factory per-model pricing snapshot.
+# Update manually from studio.nebius.ai/pricing, then set prices_as_of.
+# Run `python scripts/update_prices.py` for a guided update flow.
+# The eval runner reads this file — never fetches live prices during a run.
+prices_as_of: "2026-07-03"  # update when rates change
+source: "https://studio.nebius.ai/pricing"
+
+tokenfactory:
+  meta-llama/Llama-3.3-70B-Instruct:
+    price_in_per_1m:  null   # TODO: fill from studio.nebius.ai/pricing ($/1M input tokens)
+    price_out_per_1m: null   # TODO: fill from studio.nebius.ai/pricing ($/1M output tokens)
+
+  google/gemma-3-27b-it:
+    price_in_per_1m:  null   # TODO
+    price_out_per_1m: null   # TODO
+
+  Qwen/Qwen3-32B:
+    price_in_per_1m:  null   # TODO
+    price_out_per_1m: null   # TODO

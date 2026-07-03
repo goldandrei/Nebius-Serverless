@@ -118,6 +118,12 @@
   .skip-warn{margin-top:12px;padding:10px 14px;border:1px solid var(--amber);
              border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--amber);
              line-height:1.6}
+  .basis-tag{display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;
+             font-family:var(--mono);border:1px solid;margin-left:4px;vertical-align:middle;
+             line-height:1.6}
+  .basis-hosted{color:var(--cyan);border-color:var(--cyan)}
+  .basis-self{color:var(--good);border-color:var(--good)}
+  .cost-note{font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:6px}
   .spinner{display:inline-block;width:11px;height:11px;border:2px solid var(--line);
            border-top-color:var(--cyan);border-radius:50%;
            animation:spin .6s linear infinite;margin-right:5px;vertical-align:middle}
@@ -590,18 +596,22 @@ function startProgressPoll() {
     try {
       const r = await fetch("/api/progress");
       const p = await r.json();
-      if (p.running && p.n_items > 0) {
+      if (p.done && !p.running) {
+        // Server confirmed run is complete — stop polling; /api/run response handles Done text
+        stopProgressPoll();
+        return;
+      }
+      if (!p.running) return; // startup race — don't overwrite anything
+      if (p.n_items > 0) {
         const name = p.model ? esc(p.model.split("/").pop()) : "…";
         setStatus(
           `<span class="spinner"></span>` +
           `item ${p.item_idx}/${p.n_items} &middot; model ${p.model_idx + 1}/${p.n_models} &middot; ${name}`
         );
       } else {
-        setStatus(`<span class="spinner"></span>Queued${dots}`);
+        setStatus(`<span class="spinner"></span>Starting${dots}`);
       }
-    } catch(e) {
-      setStatus(`<span class="spinner"></span>Starting${dots}`);
-    }
+    } catch(e) { /* network hiccup — keep existing status */ }
   }, 800);
 }
 
@@ -632,6 +642,7 @@ document.getElementById("run-btn").addEventListener("click", async () => {
     }
     const results = await res.json();
     if (results.error) throw new Error(results.error);
+    stopProgressPoll(); // stop before rendering — prevents a late poll tick overwriting Done
     renderResults(results);
     const skipped = results.skipped_models || [];
     const skipHtml = skipped.length
@@ -645,9 +656,9 @@ document.getElementById("run-btn").addEventListener("click", async () => {
       "ok"
     );
   } catch(e) {
+    stopProgressPoll();
     setStatus("Error: " + esc(e.message), "err");
   } finally {
-    stopProgressPoll();
     btn.disabled = selectionOrder.length === 0;
   }
 });
@@ -673,7 +684,8 @@ function renderResults(D) {
 
   const isJudge   = D.meta.scorer === "llm_judge";
   const hasCost   = lb.some(r => r.cost_per_1k_tokens_usd != null);
-  const fmt4      = v => v == null ? "&mdash;" : `$${v.toFixed(4)}`;
+  const fmtCost   = v => v == null ? "<span style='color:var(--faint)'>—</span>" : `$${v.toFixed(5)}`;
+  const fmtRun    = v => v == null ? "<span style='color:var(--faint)'>—</span>" : `$${v.toFixed(4)}`;
   const bestAcc   = Math.max(...lb.map(r=>r.accuracy));
   const bestLat   = Math.min(...lb.map(r=>r.mean_latency_s));
   const bestCost  = hasCost
@@ -685,21 +697,33 @@ function renderResults(D) {
   const scoreLabel = isJudge ? "Judge score"
     : D.meta.scorer === "reference_match" ? "Accuracy" : "Score";
 
+  const basisTag = r => {
+    if (!r.cost_basis) return "";
+    const cls = r.cost_basis === "hosted" ? "basis-hosted" : "basis-self";
+    const lbl = r.cost_basis === "hosted" ? "hosted" : "self-hosted";
+    return `<span class="basis-tag ${cls}">${lbl}</span>`;
+  };
+
   const boardRows = lb.map(r => {
     const ci = modelIdx[r.model];
+    const isBestCost = hasCost && r.cost_per_1k_tokens_usd != null && r.cost_per_1k_tokens_usd === bestCost;
     return `<tr>
       <td class="l">
         <span class="dot" style="background:${colorFor(ci)}"></span>
-        <span class="model-name">${esc(r.model)}</span><br>
+        <span class="model-name">${esc(r.model)}</span>${basisTag(r)}<br>
         <span class="preset-lbl" style="margin-left:15px">${esc(r.preset)}</span>
       </td>
       <td class="${r.accuracy===bestAcc?'best':''}">${(r.accuracy*100).toFixed(1)}%</td>
       <td class="${r.mean_latency_s===bestLat?'best':''}">${r.mean_latency_s.toFixed(2)}s</td>
       <td>${r.p95_latency_s.toFixed(2)}s</td>
-      <td class="${hasCost&&r.cost_per_1k_tokens_usd===bestCost?'best':''}">${fmt4(r.cost_per_1k_tokens_usd)}</td>
-      <td>${fmt4(r.total_run_cost_usd)}</td>
+      <td class="${isBestCost?'best':''}">${fmtCost(r.cost_per_1k_tokens_usd)}</td>
+      <td>${fmtRun(r.total_run_cost_usd)}</td>
     </tr>`;
   }).join("");
+
+  const costNote = !hasCost
+    ? `<p class="cost-note">Cost columns empty — add token prices to config/prices.yaml (run <code>python scripts/update_prices.py</code>)</p>`
+    : "";
 
   document.getElementById("results-section").innerHTML = `
     <div class="results-section">
@@ -716,6 +740,7 @@ function renderResults(D) {
           </tr>
           ${boardRows}
         </table>
+        ${costNote}
       </div>
       <div class="two-col">
         <div class="panel" style="animation-delay:.05s">
@@ -800,7 +825,7 @@ function buildSamples(D) {
 function buildScatter(lb, modelIdx) {
   const hasCostData = lb.some(r => r.cost_per_1k_tokens_usd != null);
   if (!hasCostData) {
-    return `<p class="empty" style="padding:20px 0;font-size:12px">Cost data not available for this backend.</p>`;
+    return `<p class="empty" style="padding:20px 0;font-size:12px">Add prices to config/prices.yaml to enable this chart.</p>`;
   }
   const W=520,H=310,m={t:18,r:70,b:46,l:46};
   const pts = lb.filter(r=>r.cost_per_1k_tokens_usd!=null).map(r=>({x:r.cost_per_1k_tokens_usd,y:r.accuracy,
@@ -822,7 +847,10 @@ function buildScatter(lb, modelIdx) {
   }
   s+=`<line class="ax" x1="${m.l}" y1="${H-m.b}" x2="${W-m.r}" y2="${H-m.b}"/>`;
   s+=`<line class="ax" x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${H-m.b}"/>`;
-  s+=`<text class="axtitle" x="${(m.l+W-m.r)/2}" y="${H-4}" text-anchor="middle">cost / 1k tokens</text>`;
+  const hasHosted = lb.some(r=>r.cost_basis==="hosted");
+  const hasSelf   = lb.some(r=>r.cost_basis==="self-hosted");
+  const basisNote = hasHosted && hasSelf ? " (hosted & self-hosted)" : hasHosted ? " (hosted · token price)" : " (self-hosted · gpu/hr)";
+  s+=`<text class="axtitle" x="${(m.l+W-m.r)/2}" y="${H-4}" text-anchor="middle">$ / 1k tokens${basisNote}</text>`;
   s+=`<text class="axtitle" transform="translate(12,${(m.t+H-m.b)/2}) rotate(-90)" text-anchor="middle">score</text>`;
   const sorted=[...pts].sort((a,b)=>a.x-b.x);
   const front=[];let bestY=-1;

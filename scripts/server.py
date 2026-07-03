@@ -89,8 +89,8 @@ class Handler(BaseHTTPRequestHandler):
         (ROOT / "config" / "models.yaml").write_text(lines, encoding="utf-8")
 
         with _progress_lock:
-            _progress.update({"running": True, "model": "", "model_idx": 0,
-                               "n_models": 0, "item_idx": 0, "n_items": 0})
+            _progress.update({"running": True, "done": False, "model": "",
+                               "model_idx": 0, "n_models": 0, "item_idx": 0, "n_items": 0})
 
         def _progress_cb(**kw):
             with _progress_lock:
@@ -109,7 +109,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": str(e), "trace": traceback.format_exc()}, 500)
         finally:
             with _progress_lock:
-                _progress["running"] = False
+                _progress.update({"running": False, "done": True})
 
     def _handle_build(self):
         """Assemble JSONL from plain pieces — user never writes JSONL directly."""
