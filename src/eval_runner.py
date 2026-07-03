@@ -144,12 +144,15 @@ def list_catalog(catalog_file: Path = CATALOG_FILE) -> None:
 
 # ── main eval loop ────────────────────────────────────────────────────────────
 
-def run(backend: str = "tokenfactory", task_file: str = None, progress_cb=None) -> dict:
+def run(backend: str = "tokenfactory", task_file: str = None,
+        progress_cb=None, prices: dict = None) -> dict:
     """Run the eval harness.
 
-    backend: "tokenfactory" — Nebius Token Factory hosted API (NEBIUS_API_KEY required)
-             "endpoint"     — Nebius Serverless Endpoints: creates/deletes GPU VMs
+    backend:     "tokenfactory" — Nebius Token Factory hosted API (NEBIUS_API_KEY required)
+                 "endpoint"     — Nebius Serverless Endpoints: creates/deletes GPU VMs
     progress_cb: optional callable(model, model_idx, n_models, item_idx, n_items)
+    prices:      optional in-memory price dict populated at server startup;
+                 if None, falls back to reading config/prices.yaml from disk
     """
     tasks  = load_tasks(task_file=task_file)
     models = load_config()
@@ -158,8 +161,12 @@ def run(backend: str = "tokenfactory", task_file: str = None, progress_cb=None) 
     task_meta    = {t["id"]: t for t in available_tasks()}
     task_label   = task_meta.get(task_file, {}).get("name", task_file or "mixed") if task_file else "mixed"
 
+    # Use caller-supplied in-memory cache; fall back to disk read for direct CLI use
+    effective_prices = prices if prices is not None else _load_prices_from_file()
+
     if backend == "tokenfactory":
-        return _run_tokenfactory(tasks, models, task_label, first_scorer, task_file, progress_cb)
+        return _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
+                                 progress_cb, effective_prices)
     elif backend == "endpoint":
         return _run_endpoint(tasks, models, task_label, first_scorer, task_file)
     else:
@@ -191,8 +198,8 @@ def _build_leaderboard(models, per_model, mid_key, n_tasks):
     return leaderboard
 
 
-def _load_prices(prices_file: Path = None) -> dict:
-    """Load per-model token prices from prices.yaml. Returns {} if file absent or malformed."""
+def _load_prices_from_file(prices_file: Path = None) -> dict:
+    """Read prices.yaml and return the tokenfactory section. Returns {} on any failure."""
     f = prices_file or (ROOT / "config" / "prices.yaml")
     if not f.exists():
         return {}
@@ -204,7 +211,8 @@ def _load_prices(prices_file: Path = None) -> dict:
         return {}
 
 
-def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file, progress_cb=None):
+def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
+                      progress_cb=None, prices: dict = None):
     """Nebius Token Factory hosted API — no Serverless endpoints or jobs created."""
     import openai
 
@@ -224,7 +232,7 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file, progre
     client  = openai.OpenAI(base_url=base_url, api_key=api_key)
     mid_key = "id"
     embed   = _make_embed()
-    prices  = _load_prices()
+    prices  = prices or {}   # in-memory cache passed from server startup
 
     per_model = {m[mid_key]: {"lat": [], "in_tokens": [], "out_tokens": [], "score": 0.0, "correct": 0}
                  for m in tf_models}

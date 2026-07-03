@@ -1,14 +1,19 @@
 # Token Factory per-model pricing snapshot.
-# Update manually from studio.nebius.ai/pricing, then set prices_as_of.
-# Run `python scripts/update_prices.py` for a guided update flow.
-# The eval runner reads this file — never fetches live prices during a run.
+#
+# The pricing page (https://tokenfactory.nebius.com/pricing) is a pure JS SPA.
+# There is no public pricing REST API — all rates are behind an authenticated
+# internal billing service not reachable by API key. Therefore prices are kept
+# here as a manually-updated snapshot.
+#
+# To fill or update: python scripts/update_prices.py
+# The server loads this file ONCE at startup and caches it in memory for the session.
 prices_as_of: "2026-07-03"  # update when rates change
-source: "https://studio.nebius.ai/pricing"
+source: "https://tokenfactory.nebius.com/pricing"
 
 tokenfactory:
   meta-llama/Llama-3.3-70B-Instruct:
-    price_in_per_1m:  null   # TODO: fill from studio.nebius.ai/pricing ($/1M input tokens)
-    price_out_per_1m: null   # TODO: fill from studio.nebius.ai/pricing ($/1M output tokens)
+    price_in_per_1m:  null   # TODO: fill from tokenfactory.nebius.com/pricing ($/1M input tokens)
+    price_out_per_1m: null   # TODO: fill from tokenfactory.nebius.com/pricing ($/1M output tokens)
 
   google/gemma-3-27b-it:
     price_in_per_1m:  null   # TODO

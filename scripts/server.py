@@ -12,12 +12,9 @@ Local dev server for the eval dashboard.
 import json
 import sys
 import threading
+from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-
-# Shared progress state — written by the eval thread, read by poll requests
-_progress_lock = threading.Lock()
-_progress: dict = {"running": False}
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -28,6 +25,64 @@ try:
     load_dotenv(ROOT / ".env")
 except ImportError:
     pass
+
+# ── pricing ───────────────────────────────────────────────────────────────────
+# Loaded once at startup from config/prices.yaml; never fetched per-eval.
+# The Nebius Token Factory pricing page (https://tokenfactory.nebius.com/pricing)
+# is a pure JS SPA with no public pricing REST API — all pricing data is served
+# from an internal IAM-authenticated billing service not reachable by API key.
+# Therefore: prices are read from the local prices.yaml snapshot, which you
+# update manually via `python scripts/update_prices.py`.
+_PRICES_FILE = ROOT / "config" / "prices.yaml"
+_prices_cache: dict = {}   # model_id -> {price_in_per_1m, price_out_per_1m}
+_prices_as_of: str  = ""
+
+
+def _load_prices_at_startup() -> None:
+    """Read prices.yaml once and populate _prices_cache. Logs status clearly."""
+    global _prices_cache, _prices_as_of
+    import yaml
+
+    if not _PRICES_FILE.exists():
+        print("  [prices] prices.yaml not found — cost columns will be empty.")
+        print(f"  [prices] Run: python scripts/update_prices.py")
+        return
+
+    try:
+        data = yaml.safe_load(_PRICES_FILE.read_text(encoding="utf-8")) or {}
+    except Exception as e:
+        print(f"  [prices] Could not parse prices.yaml ({e}) — cost columns will be empty.")
+        return
+
+    _prices_as_of = data.get("prices_as_of", "unknown date")
+    tf = data.get("tokenfactory") or {}
+
+    populated, missing = [], []
+    for model_id, rates in tf.items():
+        p_in  = rates.get("price_in_per_1m")
+        p_out = rates.get("price_out_per_1m")
+        if p_in is not None and p_out is not None:
+            _prices_cache[model_id] = {"price_in_per_1m": p_in, "price_out_per_1m": p_out}
+            populated.append(model_id)
+        else:
+            missing.append(model_id)
+
+    if populated:
+        print(f"  [prices] Loaded from prices.yaml (as of {_prices_as_of}):")
+        for mid in populated:
+            r = _prices_cache[mid]
+            print(f"           {mid}: in=${r['price_in_per_1m']}/1M  out=${r['price_out_per_1m']}/1M")
+    if missing:
+        print(f"  [prices] Missing rates for: {', '.join(missing)}")
+        print(f"  [prices] Fill them in: python scripts/update_prices.py")
+    if not populated and not missing:
+        print(f"  [prices] prices.yaml is empty — cost columns will be empty.")
+        print(f"  [prices] Run: python scripts/update_prices.py")
+
+
+# Shared progress state — written by the eval thread, read by poll requests
+_progress_lock = threading.Lock()
+_progress: dict = {"running": False}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -52,6 +107,12 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/api/progress":
             with _progress_lock:
                 self._json(dict(_progress))
+        elif p == "/api/prices":
+            self._json({
+                "prices": _prices_cache,
+                "prices_as_of": _prices_as_of,
+                "source": "config/prices.yaml",
+            })
         elif p.startswith("/api/tasks/"):
             task_id = p[len("/api/tasks/"):]
             from src.eval_runner import _load_jsonl, DATA_DIR
@@ -99,7 +160,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             from src import eval_runner
             results = eval_runner.run(backend=backend, task_file=task,
-                                      progress_cb=_progress_cb)
+                                      progress_cb=_progress_cb, prices=_prices_cache)
             (ROOT / "results" / "results.json").write_text(
                 json.dumps(results, indent=2), encoding="utf-8"
             )
@@ -204,6 +265,11 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 7860
+
+    print("Loading prices...")
+    _load_prices_at_startup()
+    print()
+
     httpd = ThreadingHTTPServer(("localhost", port), Handler)
     print(f"Dashboard -> http://localhost:{port}")
     print("Ctrl+C to stop.\n")

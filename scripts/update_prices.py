@@ -70,8 +70,10 @@ def main():
     if live:
         print(f"  Live models: {sorted(live)}")
     print()
-    print(f"Open https://studio.nebius.ai/pricing in your browser,")
-    print(f"then enter the $/1M token rates below. Press Enter to keep the current value.\n")
+    print("Open https://tokenfactory.nebius.com/pricing in your browser")
+    print("(studio.nebius.ai/pricing redirects there).")
+    print("Note: the pricing page is a JS SPA — no public REST API exists for prices.")
+    print("Enter the $/1M token rates below. Press Enter to keep the current value.\n")
 
     tf = data.get("tokenfactory", {})
     for model_id, rates in tf.items():
