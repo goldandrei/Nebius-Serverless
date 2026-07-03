@@ -350,13 +350,12 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
 
 
 def _run_endpoint(tasks, models, task_label, first_scorer, task_file):
-    """Nebius Serverless Endpoints — creates and deletes GPU endpoints per model."""
+    """Nebius Serverless AI Endpoints — creates and deletes GPU VMs per model."""
     import openai
     from src import orchestrator, storage
 
-    mid_key  = "id"
-    api_key  = os.environ["NEBIUS_API_KEY"]
-    embed    = _make_embed()
+    mid_key = "id"
+    embed   = _make_embed()
 
     per_model = {m[mid_key]: {"lat": [], "cost_per_1k": [], "req_cost": [],
                                "score": 0.0, "correct": 0,
@@ -365,28 +364,23 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file):
     scorer_by_task  = {task["id"]: task.get("scorer", "programmatic") for task in tasks}
 
     for m in models:
-        mid = m[mid_key]
+        mid        = m[mid_key]
+        platform   = m.get("preset", "gpu-l40s-a")
+        preset     = m.get("instance_type", "1gpu-8vcpu-32gb")
+        rate_hr    = m.get("rate_hr", 1.55)
+        auth_token = secrets.token_hex(32)
 
-        model_name  = m.get("endpoint_model_name", m["id"])
-        flavor_name = m.get("endpoint_flavor", "base")
-        gpu_type    = m.get("endpoint_gpu_type", "gpu-l40s-d")
-        gpu_count   = m.get("endpoint_gpu_count", 1)
-        region      = m.get("endpoint_region",
-                            os.environ.get("NEBIUS_REGION", "eu-north1"))
-        rate_hr     = m.get("rate_hr", 1.55)
-
-        print(f"\n[{mid}] creating endpoint ({gpu_type} × {gpu_count}, {region})...",
-              flush=True)
-        t_created = time.time()
-        endpoint_id, routing_key = orchestrator.create_endpoint(
-            model_name, flavor_name, gpu_type, gpu_count, region
-        )
+        print(f"\n[{mid}] creating endpoint ({platform}/{preset})...", flush=True)
+        t_created   = time.time()
+        endpoint_id = orchestrator.create_endpoint(mid, platform, preset, auth_token)
 
         try:
-            base_url = orchestrator.wait_ready(endpoint_id)
+            base_url = orchestrator.wait_ready(endpoint_id, auth_token)
             t_ready  = time.time()
 
-            client = openai.OpenAI(base_url=base_url, api_key=api_key)
+            client = openai.OpenAI(
+                base_url=f"{base_url}/v1", api_key=auth_token
+            )
 
             for task in tasks:
                 msgs = []
@@ -396,7 +390,7 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file):
 
                 t0   = time.time()
                 resp = client.chat.completions.create(
-                    model=routing_key, messages=msgs, temperature=0
+                    model=mid, messages=msgs, temperature=0
                 )
                 lat        = time.time() - t0
                 raw        = resp.choices[0].message.content

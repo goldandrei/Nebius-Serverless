@@ -1,4 +1,5 @@
-# Default selection — three Token Factory-eligible models.
+# Default selection for tokenfactory backend.
+# For endpoint backend, select self-hosted models (tokenfactory_ok: false).
 compare:
   - meta-llama/Llama-3.3-70B-Instruct
   - google/gemma-3-27b-it
