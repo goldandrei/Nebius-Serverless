@@ -7,18 +7,18 @@
 #
 # To fill or update: python scripts/update_prices.py
 # The server loads this file ONCE at startup and caches it in memory for the session.
-prices_as_of: "2026-07-03"  # update when rates change
+prices_as_of: "2026-07-02"
 source: "https://tokenfactory.nebius.com/pricing"
 
 tokenfactory:
   meta-llama/Llama-3.3-70B-Instruct:
-    price_in_per_1m:  null   # TODO: fill from tokenfactory.nebius.com/pricing ($/1M input tokens)
-    price_out_per_1m: null   # TODO: fill from tokenfactory.nebius.com/pricing ($/1M output tokens)
+    price_in_per_1m:  0.13   # $/1M input tokens  — verified 2026-07-02
+    price_out_per_1m: 0.40   # $/1M output tokens — verified 2026-07-02
 
   google/gemma-3-27b-it:
-    price_in_per_1m:  null   # TODO
-    price_out_per_1m: null   # TODO
+    price_in_per_1m:  0.10
+    price_out_per_1m: 0.30
 
   Qwen/Qwen3-32B:
-    price_in_per_1m:  null   # TODO
-    price_out_per_1m: null   # TODO
+    price_in_per_1m:  0.10
+    price_out_per_1m: 0.30

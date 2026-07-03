@@ -761,6 +761,30 @@ function renderResults(D) {
     ? `<p class="cost-note">Cost columns empty — add token prices to config/prices.yaml (run <code>python scripts/update_prices.py</code>)</p>`
     : "";
 
+  // Embedding scorer caveat: cosine similarity to a short reference penalises
+  // verbose-but-correct answers, making large models appear worse than small ones.
+  const hasEmbedding = D.samples && D.samples.some(
+    s => s.scorer === "reference_match" && Object.values(s.answers || {}).some(a => a.sim !== undefined)
+  );
+  const embedCaveat = hasEmbedding ? `
+    <div style="margin-top:12px;padding:10px 14px;border:1px solid var(--amber);border-radius:8px;
+                font-family:var(--mono);font-size:11px;color:var(--amber);line-height:1.6">
+      ⚠ <b>Embedding-similarity scoring</b> — scores measure cosine distance to a short
+      reference answer. Verbose-but-correct responses (longer phrasing, chain-of-thought)
+      score lower than brief answers that closely match the reference wording. Accuracy
+      ranks here may <b>not reflect true model quality</b> — a smaller model can
+      "win" simply by being terser. Use <b>LLM-judge</b> scoring for length-insensitive
+      evaluation of factual or open-ended tasks.
+    </div>` : "";
+
+  // $/1K tok column header: for self-hosted rows this is inference-only
+  const c1kLabel = lb.some(r => r.cost_basis === "self-hosted")
+    ? "$ / 1k tok *"
+    : "$ / 1k tok";
+  const c1kFootnote = lb.some(r => r.cost_basis === "self-hosted")
+    ? `<p class="cost-note">* Self-hosted $/1K tok = inference time only (excludes deploy startup tax shown separately).</p>`
+    : "";
+
   document.getElementById("results-section").innerHTML = `
     <div class="results-section">
       <div class="panel" style="animation-delay:.02s;margin-top:0">
@@ -771,12 +795,14 @@ function renderResults(D) {
             <th>${esc(scoreLabel)}</th>
             <th>Mean lat</th>
             <th>p95 lat</th>
-            <th>$ / 1k tok</th>
+            <th>${c1kLabel}</th>
             <th>Run cost</th>
           </tr>
           ${boardRows}
         </table>
         ${costNote}
+        ${c1kFootnote}
+        ${embedCaveat}
       </div>
       <div class="two-col">
         <div class="panel" style="animation-delay:.05s">

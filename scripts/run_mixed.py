@@ -205,15 +205,15 @@ banner("ENDPOINT COST BREAKDOWN (Qwen2.5-0.5B)")
 if ep_row.get("deploy_cost_usd") is not None:
     rate    = ep_model["rate_hr"]
     dep_s   = ep_row["t_ready"] - ep_row["t_created"]
-    eval_s  = ep_row["t_eval_done"] - ep_row["t_ready"]
+    inf_s   = ep_row.get("inference_s", ep_row["t_eval_done"] - ep_row["t_ready"])
     total_s = ep_row["t_eval_done"] - ep_row["t_created"]
     print(f"  t_created   = {ts(ep_row['t_created'])}")
     print(f"  t_ready     = {ts(ep_row['t_ready'])}   (+{dep_s/60:.1f} min)")
-    print(f"  t_eval_done = {ts(ep_row['t_eval_done'])}   (+{eval_s:.0f}s from ready)")
-    print(f"  deploy cost = {dep_s/60:.1f} min × ${rate}/hr  =  ${ep_row['deploy_cost_usd']:.4f}")
-    print(f"  eval cost   = {eval_s:.0f}s × ${rate}/hr       =  ${ep_row['eval_cost_usd']:.6f}")
-    print(f"  total cost  = {total_s/60:.1f} min × ${rate}/hr  =  ${ep_row['total_run_cost_usd']:.4f}")
-    print(f"  $/1K tok (ss)                      =  ${ep_row['cost_per_1k_tokens_usd']:.5f}")
+    print(f"  t_eval_done = {ts(ep_row['t_eval_done'])}   (+{total_s - dep_s:.0f}s wall-clock from ready)")
+    print(f"  deploy cost = {dep_s/60:.1f} min × ${rate}/hr  =  ${ep_row['deploy_cost_usd']:.4f}  (startup tax)")
+    print(f"  inference   = {inf_s:.1f}s × ${rate}/hr       =  ${ep_row['eval_cost_usd']:.6f}  (inference-only)")
+    print(f"  total cost  = {total_s/60:.1f} min × ${rate}/hr  =  ${ep_row['total_run_cost_usd']:.4f}  (full uptime)")
+    print(f"  $/1K tok (inference-only)          =  ${ep_row['cost_per_1k_tokens_usd']:.5f}")
 else:
     print("  (cost fields not populated — endpoint run may have failed)")
 

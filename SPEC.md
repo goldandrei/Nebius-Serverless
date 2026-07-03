@@ -243,22 +243,27 @@ Endpoint ID: aiendpoint-e00...
 ### Self-hosted endpoints
 
 ```python
-rate_hr    = catalog[model]["rate_hr"]           # e.g. 1.55 for L40S
-deploy_cost = (t_ready - t_created) / 3600 * rate_hr   # startup tax
-eval_cost   = (t_eval_done - t_ready) / 3600 * rate_hr  # steady-state work
-total_cost  = (t_eval_done - t_created) / 3600 * rate_hr
-ss_per_1k   = eval_cost / total_output_tokens * 1000    # steady-state $/1K tok
+rate_hr      = catalog[model]["rate_hr"]           # e.g. 1.55 for L40S
+inference_s  = sum(per_item_latencies)             # vLLM request time only
+deploy_cost  = (t_ready - t_created) / 3600 * rate_hr   # startup tax
+eval_cost    = inference_s / 3600 * rate_hr              # inference-only (not wall-clock)
+total_cost   = (t_eval_done - t_created) / 3600 * rate_hr  # full uptime billed
+c1k          = eval_cost / total_output_tokens * 1000    # $/1K tok (inference-only)
 ```
 
-Typical L40S numbers (Qwen2.5-0.5B, 3 items):
-- Deploy: ~10 min → $0.26
-- Eval: ~2 s → $0.0001
-- Total: ~$0.27 (dominated by startup tax)
-- Steady-state $/1K tok: ~$0.01 (ignoring startup)
+`eval_cost` uses `inference_s` (sum of per-item model request times), NOT
+`t_eval_done - t_ready` (wall-clock), because embedding-scoring API calls
+after each inference inflate the wall-clock by 10–100× on small evals.
 
-The startup tax is reported separately so it's not mistaken for per-token cost.
-For steady-state cost, keep the endpoint up for many items or across multiple
-models before deleting.
+Measured L40S numbers (Qwen2.5-0.5B, 5 factual_qa items, 2026-07-02):
+- Deploy: 8.5 min → $0.2204 (startup tax)
+- Inference: 1.3s → $0.000568 (pure vLLM serving)
+- Total: 10.4 min → $0.2684 (full uptime billed)
+- $/1K tok (inference-only): $0.00512
+
+The startup tax dominates for small eval sets. The inference $/1K tok
+represents the steady-state serving cost; startup is a one-time deploy tax
+that amortises over larger eval sets.
 
 ### Hosted (Token Factory)
 

@@ -246,11 +246,12 @@ def _build_leaderboard(models, per_model, mid_key, n_tasks):
         # Include deploy/eval cost split when timestamps were recorded
         if "deploy_cost" in d:
             row.update({
-                "t_created":       d["t_created"],
-                "t_ready":         d["t_ready"],
-                "t_eval_done":     d["t_eval_done"],
-                "deploy_cost_usd": round(d["deploy_cost"], 6),
-                "eval_cost_usd":   round(d["eval_cost"], 6),
+                "t_created":          d["t_created"],
+                "t_ready":            d["t_ready"],
+                "t_eval_done":        d["t_eval_done"],
+                "inference_s":        round(d.get("inference_s", 0), 3),
+                "deploy_cost_usd":    round(d["deploy_cost"], 6),
+                "eval_cost_usd":      round(d["eval_cost"], 6),
             })
         leaderboard.append(row)
     leaderboard.sort(key=lambda r: r["accuracy"], reverse=True)
@@ -451,18 +452,25 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file):
         finally:
             orchestrator.delete_endpoint(endpoint_id)
 
-        t_eval_done = time.time()
+        t_eval_done  = time.time()
 
-        deploy_cost = (t_ready - t_created) / 3600 * rate_hr
-        eval_cost   = (t_eval_done - t_ready) / 3600 * rate_hr
-        total_cost  = (t_eval_done - t_created) / 3600 * rate_hr
-        total_out   = per_model[mid]["out_tokens_total"] or 1
-        c1k         = eval_cost / total_out * 1000
+        # inference_s = sum of per-item vLLM request times only.
+        # t_eval_done - t_ready includes embedding-scoring API calls after each
+        # inference call, inflating the apparent GPU-time cost. Use inference_s
+        # for eval_cost and $/1K tok so those numbers reflect model serving, not
+        # scoring overhead. total_cost = full uptime billed (honest billing total).
+        inference_s  = sum(per_model[mid]["lat"])
+        deploy_cost  = (t_ready - t_created) / 3600 * rate_hr
+        eval_cost    = inference_s / 3600 * rate_hr
+        total_cost   = (t_eval_done - t_created) / 3600 * rate_hr
+        total_out    = per_model[mid]["out_tokens_total"] or 1
+        c1k          = eval_cost / total_out * 1000
 
         per_model[mid].update({
             "t_created":    t_created,
             "t_ready":      t_ready,
             "t_eval_done":  t_eval_done,
+            "inference_s":  inference_s,
             "deploy_cost":  deploy_cost,
             "eval_cost":    eval_cost,
             "total_cost":   total_cost,
@@ -471,11 +479,10 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file):
         })
 
         deploy_min = (t_ready - t_created) / 60
-        eval_min   = (t_eval_done - t_ready) / 60
         print(
             f"  {mid}: deploy {deploy_min:.1f} min (${deploy_cost:.4f})  "
-            f"eval {eval_min:.1f} min (${eval_cost:.4f})  "
-            f"total ${total_cost:.4f}  ${c1k:.5f}/1k tok",
+            f"inference {inference_s:.1f}s (${eval_cost:.6f})  "
+            f"total ${total_cost:.4f}  ${c1k:.5f}/1k tok (inference-only)",
             flush=True,
         )
 
