@@ -230,13 +230,10 @@
     <div id="catalog-area"><p class="empty">Loading catalog…</p></div>
     <div class="run-bar">
       <span class="sel-count" id="sel-count">0 / 3 selected</span>
-      <select id="backend-sel" style="background:var(--panel2);border:1px solid var(--line);color:var(--dim);font-family:var(--mono);font-size:12px;padding:8px 10px;border-radius:7px;cursor:pointer;outline:none">
-        <option value="tokenfactory">Token Factory (hosted API)</option>
-        <option value="endpoint">Serverless Endpoint (GPU)</option>
-      </select>
       <button class="run-btn" id="run-btn" disabled>Run comparison</button>
       <span class="run-status" id="run-status"></span>
     </div>
+    <div id="routing-plan" style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--dim);line-height:1.8;min-height:18px"></div>
   </div>
 
   <!-- ── results ────────────────────────────────────────────── -->
@@ -253,6 +250,7 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 let selectedTask   = null;
 let selectedMethod = null;
 let builtinTasks   = [];
+let _catalogMap    = {};   // mid → catalog entry (set after /api/catalog loads)
 
 // ── scoring methods ───────────────────────────────────────────────────────────
 const BADGE_CLASS   = { programmatic:"prog", reference_match:"ref", llm_judge:"judge" };
@@ -506,6 +504,35 @@ const FAMILY_ORDER = ["Qwen","DeepSeek","Llama","Mistral","Gemma","Phi","SmolLM"
 // Never read from DOM checkboxes directly; always keep this in sync instead.
 let selectionOrder = [];
 
+function basisTagFor(m) {
+  if (!m) return "";
+  const isHosted = m.basis === "hosted";
+  const cls = isHosted ? "basis-hosted" : "basis-self";
+  const lbl = isHosted ? "hosted API" : "endpoint GPU";
+  return `<span class="basis-tag ${cls}">${lbl}</span>`;
+}
+
+function routingPlanHtml() {
+  if (!selectionOrder.length) return "";
+  const ep = [], tf = [];
+  for (const mid of selectionOrder) {
+    const m = _catalogMap[mid];
+    const name = esc(mid.split("/").pop());
+    if (m && m.basis === "hosted") tf.push(name);
+    else ep.push(name);
+  }
+  const parts = [];
+  if (ep.length) parts.push(
+    ep.join(", ") +
+    ` <span class="basis-tag basis-self">endpoint GPU</span>`
+  );
+  if (tf.length) parts.push(
+    tf.join(", ") +
+    ` <span class="basis-tag basis-hosted">Token Factory</span>`
+  );
+  return "Auto-routing: " + parts.join(" &nbsp;&middot;&nbsp; ");
+}
+
 function modelFamily(id) {
   const name = id.split("/")[1] || id;
   if (/^Qwen/i.test(name))               return "Qwen";
@@ -519,6 +546,10 @@ function modelFamily(id) {
 }
 
 function renderPicker(catalog, selection) {
+  // Populate global catalog map for routing preview
+  _catalogMap = {};
+  for (const m of catalog) _catalogMap[m.id] = m;
+
   selectionOrder = selection.slice(0, MAX_MODELS);
   const selSet = new Set(selectionOrder);
   const groups = {};
@@ -536,7 +567,7 @@ function renderPicker(catalog, selection) {
       html += `<label class="model-item${selSet.has(m.id)?" checked":""}">
         <input type="checkbox" class="model-check" value="${esc(m.id)}" ${checked}>
         <span>
-          <div class="mname">${esc(name)}${gated}</div>
+          <div class="mname">${esc(name)}${gated}${basisTagFor(m)}</div>
           <div class="mmeta">${esc(m.preset)} &middot; $${m.rate_hr}/hr</div>
         </span>
       </label>`;
@@ -577,6 +608,7 @@ function updateSelCount() {
   document.getElementById("sel-count").textContent =
     `${selectionOrder.length} / ${MAX_MODELS} selected`;
   document.getElementById("run-btn").disabled = selectionOrder.length === 0;
+  document.getElementById("routing-plan").innerHTML = routingPlanHtml();
 }
 
 // ── run ───────────────────────────────────────────────────────────────────────
@@ -621,8 +653,7 @@ function stopProgressPoll() {
 }
 
 document.getElementById("run-btn").addEventListener("click", async () => {
-  const models  = [...selectionOrder];  // authoritative; matches exactly what the user sees checked
-  const backend = document.getElementById("backend-sel").value;
+  const models = [...selectionOrder];  // authoritative; matches exactly what the user sees checked
   if (!models.length) { setStatus("Select at least one model.", "err"); return; }
 
   const btn = document.getElementById("run-btn");
@@ -634,7 +665,7 @@ document.getElementById("run-btn").addEventListener("click", async () => {
     const res = await fetch("/api/run", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({models, task: selectedTask, backend}),
+      body: JSON.stringify({models, task: selectedTask}),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => null);
@@ -644,15 +675,15 @@ document.getElementById("run-btn").addEventListener("click", async () => {
     if (results.error) throw new Error(results.error);
     stopProgressPoll(); // stop before rendering — prevents a late poll tick overwriting Done
     renderResults(results);
-    const skipped = results.skipped_models || [];
-    const skipHtml = skipped.length
-      ? `<div class="skip-warn">⚠ ${skipped.length} model(s) skipped — not available on Token Factory:<br>` +
-        skipped.map(s => `&nbsp;&nbsp;${esc(s.id)}: ${esc(s.reason)}`).join("<br>") + "</div>"
+    const routing = results.meta && results.meta.routing;
+    const epCount = routing ? routing.endpoint.length : 0;
+    const tfCount = routing ? routing.tokenfactory.length : 0;
+    const routeNote = routing
+      ? ` &middot; ${epCount} endpoint + ${tfCount} hosted`
       : "";
-    document.getElementById("results-section").insertAdjacentHTML("afterbegin", skipHtml);
     setStatus(
       `Done &mdash; <b>${results.meta.n_models}</b> models &middot; ` +
-      `<b>${results.meta.n_tasks}</b> rows &middot; ${esc(results.meta.task_name)}`,
+      `<b>${results.meta.n_tasks}</b> rows &middot; ${esc(results.meta.task_name)}${routeNote}`,
       "ok"
     );
   } catch(e) {
@@ -675,12 +706,17 @@ function renderResults(D) {
   const MODE_LABEL = {
     tokenfactory: "Token Factory · Nebius AI Studio",
     endpoint:     "Live · Nebius Serverless Endpoints",
+    auto:         "Nebius · auto-routed",
   };
   document.getElementById("eyebrow").textContent =
     MODE_LABEL[D.meta.mode] || `Nebius · ${D.meta.mode}`;
+  const routing  = D.meta.routing;
+  const routeMeta = routing
+    ? ` &middot; <b>${routing.endpoint.length}</b> endpoint + <b>${routing.tokenfactory.length}</b> Token Factory`
+    : ` &middot; mode <b>${esc(D.meta.mode)}</b>`;
   document.getElementById("meta").innerHTML =
     `<b>${D.meta.n_models}</b> models &middot; <b>${D.meta.n_tasks}</b> rows &middot; ` +
-    `benchmark <b>${esc(D.meta.task_name)}</b> &middot; mode <b>${esc(D.meta.mode)}</b>`;
+    `benchmark <b>${esc(D.meta.task_name)}</b>${routeMeta}`;
 
   const isJudge   = D.meta.scorer === "llm_judge";
   const hasCost   = lb.some(r => r.cost_per_1k_tokens_usd != null);

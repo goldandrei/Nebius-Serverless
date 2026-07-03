@@ -144,15 +144,16 @@ def list_catalog(catalog_file: Path = CATALOG_FILE) -> None:
 
 # ── main eval loop ────────────────────────────────────────────────────────────
 
-def run(backend: str = "tokenfactory", task_file: str = None,
-        progress_cb=None, prices: dict = None) -> dict:
-    """Run the eval harness.
+def run(task_file: str = None, progress_cb=None, prices: dict = None) -> dict:
+    """Run the eval harness with automatic per-model routing.
 
-    backend:     "tokenfactory" — Nebius Token Factory hosted API (NEBIUS_API_KEY required)
-                 "endpoint"     — Nebius Serverless Endpoints: creates/deletes GPU VMs
+    Each model is routed by its catalog ``basis`` field:
+      basis: self-hosted → Nebius Serverless Endpoint (creates/tears down a GPU VM per model)
+      basis: hosted      → Token Factory API (no GPU infrastructure managed)
+
+    A single comparison can mix both backends; results are merged into one leaderboard.
     progress_cb: optional callable(model, model_idx, n_models, item_idx, n_items)
-    prices:      optional in-memory price dict populated at server startup;
-                 if None, falls back to reading config/prices.yaml from disk
+    prices:      optional in-memory price dict populated at server startup
     """
     tasks  = load_tasks(task_file=task_file)
     models = load_config()
@@ -161,18 +162,64 @@ def run(backend: str = "tokenfactory", task_file: str = None,
     task_meta    = {t["id"]: t for t in available_tasks()}
     task_label   = task_meta.get(task_file, {}).get("name", task_file or "mixed") if task_file else "mixed"
 
-    # Use caller-supplied in-memory cache; fall back to disk read for direct CLI use
     effective_prices = prices if prices is not None else _load_prices_from_file()
 
-    if backend == "tokenfactory":
-        return _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
-                                 progress_cb, effective_prices)
-    elif backend == "endpoint":
-        return _run_endpoint(tasks, models, task_label, first_scorer, task_file)
-    else:
-        raise ValueError(
-            f"Unknown backend {backend!r}. Valid options: tokenfactory, endpoint."
+    # Route each model to its backend by basis field
+    ep_models = [m for m in models if m.get("basis", "self-hosted") == "self-hosted"]
+    tf_models = [m for m in models if m.get("basis", "self-hosted") == "hosted"]
+
+    routing = {
+        "endpoint":     [m["id"] for m in ep_models],
+        "tokenfactory": [m["id"] for m in tf_models],
+    }
+    print(
+        f"  routing: endpoint={routing['endpoint']}  tokenfactory={routing['tokenfactory']}",
+        flush=True,
+    )
+
+    results_tf = None
+    results_ep = None
+
+    if tf_models:
+        results_tf = _run_tokenfactory(
+            tasks, tf_models, task_label, first_scorer, task_file,
+            progress_cb, effective_prices,
         )
+    if ep_models:
+        results_ep = _run_endpoint(tasks, ep_models, task_label, first_scorer, task_file)
+
+    # Merge leaderboards — sort by accuracy descending
+    leaderboard: list = []
+    if results_tf:
+        leaderboard.extend(results_tf["leaderboard"])
+    if results_ep:
+        leaderboard.extend(results_ep["leaderboard"])
+    leaderboard.sort(key=lambda r: r["accuracy"], reverse=True)
+
+    # Merge samples — same question may have answers from both backends
+    samples_map: dict = {}
+    for result in filter(None, [results_tf, results_ep]):
+        for s in result.get("samples", []):
+            key = s["q"]
+            if key not in samples_map:
+                samples_map[key] = {k: v for k, v in s.items() if k != "answers"}
+                samples_map[key]["answers"] = {}
+            samples_map[key]["answers"].update(s.get("answers", {}))
+
+    return {
+        "meta": {
+            "mode":       "auto",
+            "task":       task_file or "mixed",
+            "task_name":  task_label,
+            "scorer":     first_scorer,
+            "n_models":   len(leaderboard),
+            "n_tasks":    len(tasks),
+            "benchmark":  task_label,
+            "routing":    routing,
+        },
+        "leaderboard": leaderboard,
+        "samples":     list(samples_map.values()),
+    }
 
 
 def _build_leaderboard(models, per_model, mid_key, n_tasks):
@@ -231,23 +278,16 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
     base_url = os.environ["NEBIUS_BASE_URL"]
     api_key  = os.environ["NEBIUS_API_KEY"]
 
-    skipped   = [m for m in models if not m.get("tokenfactory_ok")]
-    tf_models = [m for m in models if m.get("tokenfactory_ok")]
-    if not tf_models:
-        raise ValueError(
-            "No tokenfactory_ok models in current selection. "
-            "Selected: " + ", ".join(m["id"] for m in models) + ". "
-            "Set tokenfactory_ok: true in config/catalog.yaml for models available on "
-            "Token Factory (e.g. meta-llama/Llama-3.3-70B-Instruct)."
-        )
+    if not models:
+        raise ValueError("_run_tokenfactory called with no models")
 
     client  = openai.OpenAI(base_url=base_url, api_key=api_key)
     mid_key = "id"
     embed   = _make_embed()
-    prices  = prices or {}   # in-memory cache passed from server startup
+    prices  = prices or {}
 
     per_model = {m[mid_key]: {"lat": [], "in_tokens": [], "out_tokens": [], "score": 0.0, "correct": 0}
-                 for m in tf_models}
+                 for m in models}
 
     n = len(tasks)
     samples = []
@@ -256,10 +296,10 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
         row = {"q": task["input"], "expected": task_expected(task),
                "scorer": scorer_name, "answers": {}}
 
-        for i, m in enumerate(tf_models):
+        for i, m in enumerate(models):
             mid  = m[mid_key]
             if progress_cb:
-                progress_cb(model=mid, model_idx=i, n_models=len(tf_models),
+                progress_cb(model=mid, model_idx=i, n_models=len(models),
                             item_idx=j + 1, n_items=n)
             msgs = []
             if task.get("instruction"):
@@ -295,7 +335,7 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
         samples.append(row)
 
     leaderboard = []
-    for m in tf_models:
+    for m in models:
         mid = m[mid_key]
         d   = per_model[mid]
         lat_sorted = sorted(d["lat"])
@@ -336,16 +376,12 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
             "task":      task_file or "mixed",
             "task_name": task_label,
             "scorer":    first_scorer,
-            "n_models":  len(tf_models),
+            "n_models":  len(models),
             "n_tasks":   n,
             "benchmark": task_label,
         },
-        "leaderboard":   leaderboard,
-        "samples":       samples,
-        "skipped_models": [
-            {"id": m["id"], "reason": "not tokenfactory_ok — not available on Token Factory"}
-            for m in skipped
-        ],
+        "leaderboard": leaderboard,
+        "samples":     samples,
     }
 
 

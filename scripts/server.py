@@ -107,6 +107,22 @@ class Handler(BaseHTTPRequestHandler):
         elif p == "/api/progress":
             with _progress_lock:
                 self._json(dict(_progress))
+        elif p == "/api/routing":
+            from urllib.parse import urlparse, parse_qs
+            from src.eval_runner import load_catalog
+            qs  = parse_qs(urlparse(self.path).query)
+            ids = [m.strip() for m in qs.get("models", [""])[0].split(",") if m.strip()]
+            cat = load_catalog()
+            plan = {"endpoint": [], "tokenfactory": [], "unknown": []}
+            for mid in ids:
+                m = cat.get(mid)
+                if not m:
+                    plan["unknown"].append(mid)
+                elif m.get("basis") == "hosted":
+                    plan["tokenfactory"].append(mid)
+                else:
+                    plan["endpoint"].append(mid)
+            self._json(plan)
         elif p == "/api/prices":
             self._json({
                 "prices": _prices_cache,
@@ -136,10 +152,7 @@ class Handler(BaseHTTPRequestHandler):
         body     = json.loads(self.rfile.read(length))
         selected = body.get("models", [])
         task     = body.get("task") or "assistant_commands"
-        backend  = body.get("backend", "tokenfactory")
 
-        if backend not in ("tokenfactory", "endpoint"):
-            self._json({"error": f"Unknown backend {backend!r}"}, 400); return
         if not selected:
             self._json({"error": "No models selected"}, 400); return
         if len(selected) > 3:
@@ -159,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             from src import eval_runner
-            results = eval_runner.run(backend=backend, task_file=task,
+            results = eval_runner.run(task_file=task,
                                       progress_cb=_progress_cb, prices=_prices_cache)
             (ROOT / "results" / "results.json").write_text(
                 json.dumps(results, indent=2), encoding="utf-8"
