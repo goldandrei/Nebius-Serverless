@@ -186,7 +186,8 @@ def run(task_file: str = None, progress_cb=None, prices: dict = None) -> dict:
             progress_cb, effective_prices,
         )
     if ep_models:
-        results_ep = _run_endpoint(tasks, ep_models, task_label, first_scorer, task_file)
+        results_ep = _run_endpoint(tasks, ep_models, task_label, first_scorer, task_file,
+                                   progress_cb=progress_cb)
 
     # Merge leaderboards — sort by accuracy descending
     leaderboard: list = []
@@ -386,7 +387,7 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
     }
 
 
-def _run_endpoint(tasks, models, task_label, first_scorer, task_file):
+def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_cb=None):
     """Nebius Serverless AI Endpoints — creates and deletes GPU VMs per model."""
     import openai
     from src import orchestrator, storage
@@ -408,16 +409,31 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file):
         auth_token = secrets.token_hex(32)
 
         print(f"\n[{mid}] creating endpoint ({platform}/{preset})...", flush=True)
+        if progress_cb:
+            progress_cb(ep_model=mid, ep_state="PROVISIONING", ep_elapsed_s=0,
+                        n_items=0, item_idx=0)
         t_created   = time.time()
         endpoint_id = orchestrator.create_endpoint(mid, platform, preset, auth_token)
 
+        # Wrap progress_cb to also inject ep_model so the dashboard knows which model
+        def _ep_progress_cb(**kw):
+            if progress_cb:
+                progress_cb(ep_model=mid, **kw)
+
         try:
-            base_url = orchestrator.wait_ready(endpoint_id, auth_token)
+            base_url = orchestrator.wait_ready(endpoint_id, auth_token,
+                                               progress_cb=_ep_progress_cb)
             t_ready  = time.time()
 
             client = openai.OpenAI(
                 base_url=f"{base_url}/v1", api_key=auth_token
             )
+
+            if progress_cb:
+                progress_cb(ep_model=mid, ep_state="evaluating",
+                            ep_elapsed_s=time.time() - t_created,
+                            n_items=len(tasks), item_idx=0,
+                            n_models=len(models), model=mid, model_idx=0)
 
             for task in tasks:
                 msgs = []

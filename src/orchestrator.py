@@ -132,19 +132,28 @@ def _extract_url(data: dict) -> str | None:
     return None
 
 
-def wait_ready(endpoint_id: str, auth_token: str, timeout_s: int = 1800) -> str:
+def wait_ready(endpoint_id: str, auth_token: str, timeout_s: int = 1800,
+               progress_cb=None) -> str:
     """
     Poll until the endpoint is RUNNING and the model weights are loaded.
     Returns the HTTPS base URL (without /v1 suffix).
+
+    progress_cb: optional callable(**kw) — called with ep_state and ep_elapsed_s
+                 on each poll so the dashboard can show live state.
     """
     deadline = time.time() + timeout_s
+    t_start  = time.time()
     base_url = None
 
     print("    polling for RUNNING state...", flush=True)
     while time.time() < deadline:
-        data = get_endpoint(endpoint_id)
+        data  = get_endpoint(endpoint_id)
         state = data.get("status", {}).get("state", "")
-        print(f"    state={state}", flush=True)
+        elapsed = time.time() - t_start
+        print(f"    state={state}  elapsed={elapsed:.0f}s", flush=True)
+
+        if progress_cb:
+            progress_cb(ep_state=state, ep_elapsed_s=elapsed)
 
         if state == "ERROR":
             raise RuntimeError(f"Endpoint {endpoint_id} entered ERROR state")
@@ -163,6 +172,9 @@ def wait_ready(endpoint_id: str, auth_token: str, timeout_s: int = 1800) -> str:
     import requests
     print(f"    endpoint at {base_url} — waiting for model weights...", flush=True)
     while time.time() < deadline:
+        elapsed = time.time() - t_start
+        if progress_cb:
+            progress_cb(ep_state="loading", ep_elapsed_s=elapsed)
         try:
             r = requests.get(
                 f"{base_url}/v1/models",

@@ -84,10 +84,31 @@
   .task-badge.ref{color:var(--amber);border-color:var(--amber)}
   .task-badge.judge{color:var(--cyan);border-color:var(--cyan)}
 
+  /* badge legend */
+  .badge-legend{
+    display:flex;gap:14px;flex-wrap:wrap;align-items:center;
+    font-family:var(--mono);font-size:11px;color:var(--faint);
+    margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--line);
+    line-height:1.9;
+  }
+  .badge-legend span{display:inline-flex;align-items:center;gap:5px}
+
+  /* two-section picker */
+  .section-hdr{margin:18px 0 10px;padding-top:16px;border-top:1px solid var(--line)}
+  .section-hdr:first-child{border-top:none;margin-top:0;padding-top:0}
+  .section-title{font-family:var(--mono);font-size:11px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.14em;color:var(--txt);margin-bottom:7px}
+  .section-note{
+    font-family:var(--mono);font-size:11px;color:var(--amber);
+    padding:8px 12px;border-radius:6px;background:rgba(224,164,88,.07);
+    border-left:3px solid var(--amber);margin-bottom:12px;line-height:1.6;
+  }
+  .section-note.ok{color:var(--good);background:rgba(107,208,139,.06);border-left-color:var(--good)}
+
   /* model picker */
   .fam-label{font-family:var(--mono);font-size:10px;letter-spacing:.14em;
              text-transform:uppercase;color:var(--faint);
-             padding:10px 0 6px;border-top:1px solid var(--line);margin-top:8px}
+             padding:10px 0 6px;border-top:1px solid var(--panel2);margin-top:8px}
   .fam-label:first-child{border-top:none;margin-top:0;padding-top:0}
   .model-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px;
               margin-bottom:4px}
@@ -98,11 +119,16 @@
   .model-item input[type=checkbox]{width:14px;height:14px;accent-color:var(--cyan);
                                    flex-shrink:0;cursor:pointer}
   .model-item.checked{border-color:var(--cyan);background:rgba(77,210,196,.06)}
-  .model-item.dimmed{opacity:.35;cursor:default}
+  .model-item.dimmed{opacity:.38;cursor:not-allowed;pointer-events:none}
   .mname{font-family:var(--mono);font-size:12.5px;color:var(--txt)}
   .mmeta{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:1px}
   .gated{color:var(--amber);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
-         margin-left:4px}
+         margin-left:4px;font-family:var(--mono)}
+  .flag{display:inline-block;font-size:10px;padding:1px 5px;border-radius:4px;
+        font-family:var(--mono);margin-left:3px;vertical-align:middle;line-height:1.6}
+  .flag-vision{color:#C4A4F0;border:1px solid #C4A4F0}
+  .flag-reasoning{color:var(--amber);border:1px solid var(--amber)}
+  .flag-embedding{color:var(--cyan);border:1px solid var(--cyan)}
 
   /* run bar */
   .run-bar{display:flex;align-items:center;gap:14px;margin-top:18px;
@@ -250,7 +276,8 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 let selectedTask   = null;
 let selectedMethod = null;
 let builtinTasks   = [];
-let _catalogMap    = {};   // mid → catalog entry (set after /api/catalog loads)
+let _catalogMap    = {};   // mid → catalog entry
+let _pricesMap     = {};   // mid → {price_in_per_1m, price_out_per_1m}
 
 // ── scoring methods ───────────────────────────────────────────────────────────
 const BADGE_CLASS   = { programmatic:"prog", reference_match:"ref", llm_judge:"judge" };
@@ -498,11 +525,52 @@ function populateBuilder(records, scorer) {
 }
 
 // ── model picker ──────────────────────────────────────────────────────────────
-const FAMILY_ORDER = ["Qwen","DeepSeek","Llama","Mistral","Gemma","Phi","SmolLM","Other"];
+const FAMILY_ORDER = [
+  "Qwen","DeepSeek","Nvidia","Llama","Nous","Gemma","Mistral",
+  "MiniMax","Moonshot","OpenAI","GLM","MiniCPM","Phi","SmolLM","Other"
+];
 
-// Ordered list of checked model IDs — drives both the visual state and the POST body.
-// Never read from DOM checkboxes directly; always keep this in sync instead.
 let selectionOrder = [];
+
+function modelFamily(id) {
+  const parts = id.split("/");
+  const org   = parts[0] || "";
+  const name  = parts[1] || org;
+  if (/^Qwen/i.test(name)   || org === "Qwen")            return "Qwen";
+  if (/^DeepSeek/i.test(name) || org === "deepseek-ai")   return "DeepSeek";
+  if (/^(Nemotron|NVIDIA-Nemotron|Cosmos|Llama-3_1-Nemotron)/i.test(name) ||
+      /nvidia/i.test(org))                                 return "Nvidia";
+  if (/^Llama/i.test(name))                               return "Llama";
+  if (/^Hermes/i.test(name) || org === "NousResearch")    return "Nous";
+  if (/^gemma/i.test(name)  || org === "google")          return "Gemma";
+  if (/^(Mistral|Mixtral)/i.test(name))                   return "Mistral";
+  if (/^MiniMax/i.test(name)|| org === "MiniMaxAI")       return "MiniMax";
+  if (/^Kimi/i.test(name)   || org === "moonshotai")      return "Moonshot";
+  if (/^gpt/i.test(name)    || org === "openai")          return "OpenAI";
+  if (/^GLM/i.test(name)    || org === "zai-org")         return "GLM";
+  if (/^MiniCPM/i.test(name)|| org === "openbmb")         return "MiniCPM";
+  if (/^Phi/i.test(name)    || org === "microsoft")       return "Phi";
+  if (/^SmolLM/i.test(name) || org === "HuggingFaceTB")  return "SmolLM";
+  return "Other";
+}
+
+function modelFlagHtml(m) {
+  let f = "";
+  if (m.vision)    f += `<span class="flag flag-vision">vision</span>`;
+  if (m.reasoning) f += `<span class="flag flag-reasoning">thinking</span>`;
+  if (m.embedding) f += `<span class="flag flag-embedding">embedding</span>`;
+  return f;
+}
+
+function hostedMetaHtml(m) {
+  const p = _pricesMap[m.id];
+  if (!p) return `per token &middot; <span style="color:var(--bad)">price missing</span>`;
+  return `in <b>$${p.price_in_per_1m}/1M</b> &middot; out <b>$${p.price_out_per_1m}/1M</b>`;
+}
+
+function selfMetaHtml(m) {
+  return `${esc(m.preset)} &middot; <b>$${m.rate_hr}/hr</b>`;
+}
 
 function basisTagFor(m) {
   if (!m) return "";
@@ -512,48 +580,9 @@ function basisTagFor(m) {
   return `<span class="basis-tag ${cls}">${lbl}</span>`;
 }
 
-function routingPlanHtml() {
-  if (!selectionOrder.length) return "";
-  const ep = [], tf = [];
-  for (const mid of selectionOrder) {
-    const m = _catalogMap[mid];
-    const name = esc(mid.split("/").pop());
-    if (m && m.basis === "hosted") tf.push(name);
-    else ep.push(name);
-  }
-  const parts = [];
-  if (ep.length) parts.push(
-    ep.join(", ") +
-    ` <span class="basis-tag basis-self">endpoint GPU</span>`
-  );
-  if (tf.length) parts.push(
-    tf.join(", ") +
-    ` <span class="basis-tag basis-hosted">Token Factory</span>`
-  );
-  return "Auto-routing: " + parts.join(" &nbsp;&middot;&nbsp; ");
-}
-
-function modelFamily(id) {
-  const name = id.split("/")[1] || id;
-  if (/^Qwen/i.test(name))               return "Qwen";
-  if (/^DeepSeek/i.test(name))           return "DeepSeek";
-  if (/^Llama/i.test(name))              return "Llama";
-  if (/^(Mistral|Mixtral)/i.test(name))  return "Mistral";
-  if (/^gemma/i.test(name))              return "Gemma";
-  if (/^Phi/i.test(name))                return "Phi";
-  if (/^SmolLM/i.test(name))             return "SmolLM";
-  return "Other";
-}
-
-function renderPicker(catalog, selection) {
-  // Populate global catalog map for routing preview
-  _catalogMap = {};
-  for (const m of catalog) _catalogMap[m.id] = m;
-
-  selectionOrder = selection.slice(0, MAX_MODELS);
-  const selSet = new Set(selectionOrder);
+function renderModelSection(models, selSet, basis) {
   const groups = {};
-  for (const m of catalog) {
+  for (const m of models) {
     const fam = modelFamily(m.id);
     (groups[fam] = groups[fam] || []).push(m);
   }
@@ -563,17 +592,62 @@ function renderPicker(catalog, selection) {
     for (const m of groups[fam]) {
       const name    = m.id.split("/")[1] || m.id;
       const checked = selSet.has(m.id) ? "checked" : "";
-      const gated   = m.gated ? '<span class="gated">gated</span>' : "";
-      html += `<label class="model-item${selSet.has(m.id)?" checked":""}">
-        <input type="checkbox" class="model-check" value="${esc(m.id)}" ${checked}>
+      const gated   = m.gated    ? '<span class="gated">GATED</span>' : "";
+      const flags   = modelFlagHtml(m);
+      const meta    = basis === "hosted" ? hostedMetaHtml(m) : selfMetaHtml(m);
+      const dimCls  = m.embedding ? " dimmed" : "";
+      const dis     = m.embedding ? " disabled" : "";
+      html += `<label class="model-item${selSet.has(m.id)?" checked":""}${dimCls}">
+        <input type="checkbox" class="model-check" value="${esc(m.id)}" ${checked}${dis}>
         <span>
-          <div class="mname">${esc(name)}${gated}${basisTagFor(m)}</div>
-          <div class="mmeta">${esc(m.preset)} &middot; $${m.rate_hr}/hr</div>
+          <div class="mname">${esc(name)}${gated}${flags}</div>
+          <div class="mmeta">${meta}</div>
         </span>
       </label>`;
     }
     html += "</div>";
   }
+  return html;
+}
+
+function renderPicker(catalog, selection) {
+  _catalogMap = {};
+  for (const m of catalog) _catalogMap[m.id] = m;
+
+  selectionOrder = selection.slice(0, MAX_MODELS);
+  const selSet = new Set(selectionOrder);
+
+  const selfModels   = catalog.filter(m => m.basis !== "hosted");
+  const hostedModels = catalog.filter(m => m.basis === "hosted");
+
+  let html = `
+    <div class="badge-legend">
+      <span><span class="basis-tag basis-self">endpoint GPU</span>&nbsp;deploys a GPU on demand (slow, $/hr)</span>
+      <span><span class="basis-tag basis-hosted">hosted API</span>&nbsp;Token Factory, instant ($/token)</span>
+      <span><span class="gated">GATED</span>&nbsp;needs HuggingFace token</span>
+      <span><span class="flag flag-vision">vision</span>&nbsp;image inputs</span>
+      <span><span class="flag flag-reasoning">thinking</span>&nbsp;extended reasoning</span>
+      <span><span class="flag flag-embedding">embedding</span>&nbsp;scorer only, not for inference</span>
+    </div>`;
+
+  if (selfModels.length) {
+    html += `
+    <div class="section-hdr">
+      <div class="section-title">🖥&nbsp; Self-hosted (Serverless Endpoint)</div>
+      <div class="section-note">⚠ Deploys a GPU on demand — takes <b>5–20 min</b> depending on Nebius capacity (measured 5.6–18 min). Billed per <b>GPU-hour</b> from create to delete.</div>
+    </div>
+    ${renderModelSection(selfModels, selSet, "self")}`;
+  }
+
+  if (hostedModels.length) {
+    html += `
+    <div class="section-hdr">
+      <div class="section-title">⚡&nbsp; Instant (Token Factory)</div>
+      <div class="section-note ok">No GPU deployment — starts immediately. Billed per token (input and output priced separately).</div>
+    </div>
+    ${renderModelSection(hostedModels, selSet, "hosted")}`;
+  }
+
   document.getElementById("catalog-area").innerHTML = html;
   document.querySelectorAll(".model-check").forEach(cb =>
     cb.addEventListener("change", onModelChange)
@@ -586,12 +660,11 @@ function onModelChange(e) {
   const mid = cb.value;
   if (cb.checked) {
     selectionOrder.push(mid);
-    // At limit: auto-deselect the oldest so the new pick always lands
     if (selectionOrder.length > MAX_MODELS) {
       const evicted = selectionOrder.shift();
-      const evictedCb = Array.from(document.querySelectorAll(".model-check"))
-                             .find(c => c.value === evicted);
-      if (evictedCb) evictedCb.checked = false;
+      Array.from(document.querySelectorAll(".model-check"))
+           .filter(c => c.value === evicted)
+           .forEach(c => { c.checked = false; });
     }
   } else {
     selectionOrder = selectionOrder.filter(id => id !== mid);
@@ -600,7 +673,6 @@ function onModelChange(e) {
 }
 
 function updateSelCount() {
-  // Sync visual checked state from selectionOrder — never from DOM checkbox .checked
   const selSet = new Set(selectionOrder);
   document.querySelectorAll(".model-check").forEach(cb => {
     cb.closest(".model-item").classList.toggle("checked", selSet.has(cb.value));
@@ -609,6 +681,21 @@ function updateSelCount() {
     `${selectionOrder.length} / ${MAX_MODELS} selected`;
   document.getElementById("run-btn").disabled = selectionOrder.length === 0;
   document.getElementById("routing-plan").innerHTML = routingPlanHtml();
+}
+
+function routingPlanHtml() {
+  if (!selectionOrder.length) return "";
+  const ep = [], tf = [];
+  for (const mid of selectionOrder) {
+    const m    = _catalogMap[mid];
+    const name = esc(mid.split("/").pop());
+    if (m && m.basis === "hosted") tf.push(name);
+    else ep.push(name);
+  }
+  const parts = [];
+  if (ep.length) parts.push(ep.join(", ") + ` <span class="basis-tag basis-self">endpoint GPU</span>`);
+  if (tf.length) parts.push(tf.join(", ") + ` <span class="basis-tag basis-hosted">Token Factory</span>`);
+  return "Auto-routing: " + parts.join(" &nbsp;&middot;&nbsp; ");
 }
 
 // ── run ───────────────────────────────────────────────────────────────────────
@@ -627,17 +714,29 @@ function startProgressPoll() {
     const dots = ".".repeat((tick % 3) + 1);
     try {
       const p = await fetch("/api/progress").then(r => r.json());
-      if (p.done && !p.running) {
-        // waitForDone() handles completion — poll just keeps the spinner live
-        stopProgressPoll();
-        return;
-      }
-      if (!p.running) return; // startup race — don't overwrite
+      if (p.done && !p.running) { stopProgressPoll(); return; }
+      if (!p.running) return;
+
       if (p.n_items > 0) {
+        // Active inference
         const name = p.model ? esc(p.model.split("/").pop()) : "…";
         setStatus(
           `<span class="spinner"></span>` +
           `item ${p.item_idx}/${p.n_items} &middot; model ${p.model_idx + 1}/${p.n_models} &middot; ${name}`
+        );
+      } else if (p.ep_state) {
+        // Endpoint deploying — show Nebius state + elapsed
+        const elapsed  = Math.round(p.ep_elapsed_s || 0);
+        const elapsedStr = elapsed >= 60
+          ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`
+          : `${elapsed}s`;
+        const model = p.ep_model ? esc(p.ep_model.split("/").pop()) : "";
+        const stateLabel = esc(p.ep_state);
+        setStatus(
+          `<span class="spinner"></span>` +
+          (model ? `${model} — ` : "") +
+          `<b>${stateLabel}</b> &middot; ${elapsedStr} elapsed` +
+          ` &middot; <span style="color:var(--faint)">expected 5–20 min, no ETA from Nebius</span>`
         );
       } else {
         setStatus(`<span class="spinner"></span>Deploying endpoint${dots}`);
@@ -652,7 +751,7 @@ function stopProgressPoll() {
 }
 
 document.getElementById("run-btn").addEventListener("click", async () => {
-  const models = [...selectionOrder];  // authoritative; matches exactly what the user sees checked
+  const models = [...selectionOrder];
   if (!models.length) { setStatus("Select at least one model.", "err"); return; }
 
   const btn = document.getElementById("run-btn");
@@ -660,8 +759,6 @@ document.getElementById("run-btn").addEventListener("click", async () => {
   setStatus('<span class="spinner"></span>Starting…');
 
   try {
-    // POST returns immediately with {"status":"started"} — eval runs in background thread.
-    // Endpoint deploys take 10+ minutes; blocking the HTTP connection would timeout.
     const res = await fetch("/api/run", {
       method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -674,7 +771,6 @@ document.getElementById("run-btn").addEventListener("click", async () => {
     const started = await res.json();
     if (started.error) throw new Error(started.error);
 
-    // Poll /api/progress until done, then fetch results from /results.json
     startProgressPoll();
     await waitForDone();
   } catch(e) {
@@ -686,12 +782,11 @@ document.getElementById("run-btn").addEventListener("click", async () => {
 
 async function waitForDone() {
   const btn = document.getElementById("run-btn");
-  // Poll every 2s until done
   while (true) {
     await new Promise(r => setTimeout(r, 2000));
     let p;
     try { p = await fetch("/api/progress").then(r => r.json()); }
-    catch(e) { continue; }  // transient network hiccup
+    catch(e) { continue; }
 
     if (p.done && !p.running) {
       stopProgressPoll();
@@ -700,15 +795,14 @@ async function waitForDone() {
         btn.disabled = selectionOrder.length === 0;
         return;
       }
-      // Fetch results from disk
       try {
         const rr = await fetch("/results.json");
         if (!rr.ok) throw new Error("results.json not found");
         const results = await rr.json();
         renderResults(results);
-        const routing = results.meta && results.meta.routing;
-        const epCount = routing ? routing.endpoint.length : 0;
-        const tfCount = routing ? routing.tokenfactory.length : 0;
+        const routing  = results.meta && results.meta.routing;
+        const epCount  = routing ? routing.endpoint.length : 0;
+        const tfCount  = routing ? routing.tokenfactory.length : 0;
         const routeNote = routing
           ? ` &middot; ${epCount} endpoint + ${tfCount} hosted`
           : "";
@@ -751,50 +845,88 @@ function renderResults(D) {
     `benchmark <b>${esc(D.meta.task_name)}</b>${routeMeta}`;
 
   const isJudge   = D.meta.scorer === "llm_judge";
+  const hasSelf   = lb.some(r => r.cost_basis === "self-hosted");
+  const hasHosted = lb.some(r => r.cost_basis === "hosted");
   const hasCost   = lb.some(r => r.cost_per_1k_tokens_usd != null);
-  const fmtCost   = v => v == null ? "<span style='color:var(--faint)'>—</span>" : `$${v.toFixed(5)}`;
-  const fmtRun    = v => v == null ? "<span style='color:var(--faint)'>—</span>" : `$${v.toFixed(4)}`;
-  const bestAcc   = Math.max(...lb.map(r=>r.accuracy));
-  const bestLat   = Math.min(...lb.map(r=>r.mean_latency_s));
-  const bestCost  = hasCost
-    ? Math.min(...lb.filter(r=>r.cost_per_1k_tokens_usd!=null).map(r=>r.cost_per_1k_tokens_usd))
+
+  const bestAcc  = Math.max(...lb.map(r => r.accuracy));
+  const bestLat  = Math.min(...lb.map(r => r.mean_latency_s));
+  const bestCost = hasCost
+    ? Math.min(...lb.filter(r => r.cost_per_1k_tokens_usd != null).map(r => r.cost_per_1k_tokens_usd))
     : null;
-  const modelIdx  = {};
-  lb.forEach((r,i) => modelIdx[r.model] = i);
+  const modelIdx = {};
+  lb.forEach((r, i) => modelIdx[r.model] = i);
 
   const scoreLabel = isJudge ? "Judge score"
     : D.meta.scorer === "reference_match" ? "Accuracy" : "Score";
 
+  const fmtNil = `<span style="color:var(--faint)">—</span>`;
+  const fmtD   = v => v == null ? fmtNil : `$${v.toFixed(4)}`;
+  const fmtC   = v => v == null ? fmtNil : `$${v.toFixed(5)}`;
+  const fmtT   = v => v == null ? fmtNil : `$${v.toFixed(5)}`;
+
   const basisTag = r => {
     if (!r.cost_basis) return "";
     const cls = r.cost_basis === "hosted" ? "basis-hosted" : "basis-self";
-    const lbl = r.cost_basis === "hosted" ? "hosted" : "self-hosted";
+    const lbl = r.cost_basis === "hosted" ? "hosted API" : "endpoint GPU";
     return `<span class="basis-tag ${cls}">${lbl}</span>`;
   };
 
+  // Sub-line under model name for self-hosted rows: deploy time + inference time
+  const modelSubline = r => {
+    if (r.cost_basis !== "self-hosted") return esc(r.preset);
+    const deployMin = (r.t_ready != null && r.t_created != null)
+      ? `deploy ${((r.t_ready - r.t_created) / 60).toFixed(1)} min`
+      : null;
+    const infTime = r.inference_s != null
+      ? `inf ${r.inference_s.toFixed(1)}s`
+      : null;
+    const parts = [esc(r.preset), deployMin, infTime].filter(Boolean).join(" &middot; ");
+    return parts;
+  };
+
   const boardRows = lb.map(r => {
-    const ci = modelIdx[r.model];
-    const isBestCost = hasCost && r.cost_per_1k_tokens_usd != null && r.cost_per_1k_tokens_usd === bestCost;
+    const ci         = modelIdx[r.model];
+    const isBestAcc  = r.accuracy === bestAcc;
+    const isBestLat  = r.mean_latency_s === bestLat;
+    const isBestCost = bestCost != null && r.cost_per_1k_tokens_usd === bestCost;
+
+    // Deploy $ and Eval $ columns — only present when hasSelf
+    const deployCell = hasSelf
+      ? `<td style="text-align:right">${r.cost_basis === "self-hosted" ? fmtD(r.deploy_cost_usd) : fmtNil}</td>`
+      : "";
+    const evalCell = hasSelf
+      ? `<td style="text-align:right">${r.cost_basis === "self-hosted" ? fmtD(r.eval_cost_usd) : fmtNil}</td>`
+      : "";
+
     return `<tr>
       <td class="l">
         <span class="dot" style="background:${colorFor(ci)}"></span>
         <span class="model-name">${esc(r.model)}</span>${basisTag(r)}<br>
-        <span class="preset-lbl" style="margin-left:15px">${esc(r.preset)}</span>
+        <span class="preset-lbl" style="margin-left:15px">${modelSubline(r)}</span>
       </td>
-      <td class="${r.accuracy===bestAcc?'best':''}">${(r.accuracy*100).toFixed(1)}%</td>
-      <td class="${r.mean_latency_s===bestLat?'best':''}">${r.mean_latency_s.toFixed(2)}s</td>
-      <td>${r.p95_latency_s.toFixed(2)}s</td>
-      <td class="${isBestCost?'best':''}">${fmtCost(r.cost_per_1k_tokens_usd)}</td>
-      <td>${fmtRun(r.total_run_cost_usd)}</td>
+      <td class="${isBestAcc ? 'best' : ''}" style="text-align:right">${(r.accuracy * 100).toFixed(1)}%</td>
+      <td class="${isBestLat ? 'best' : ''}" style="text-align:right">${r.mean_latency_s.toFixed(2)}s</td>
+      ${deployCell}
+      ${evalCell}
+      <td class="${isBestCost ? 'best' : ''}" style="text-align:right">${fmtC(r.cost_per_1k_tokens_usd)}</td>
+      <td style="text-align:right">${fmtT(r.total_run_cost_usd)}</td>
     </tr>`;
   }).join("");
 
-  const costNote = !hasCost
-    ? `<p class="cost-note">Cost columns empty — add token prices to config/prices.yaml (run <code>python scripts/update_prices.py</code>)</p>`
+  const deployHead = hasSelf
+    ? `<th>Deploy $</th><th>Eval $</th>`
     : "";
 
-  // Embedding scorer caveat: cosine similarity to a short reference penalises
-  // verbose-but-correct answers, making large models appear worse than small ones.
+  const c1kLabel    = hasSelf ? "$/1K tok *" : "$/1K tok";
+  const c1kFootnote = hasSelf
+    ? `<p class="cost-note">* Self-hosted $/1K tok = inference GPU time only (deploy startup cost shown separately in Deploy $).</p>`
+    : "";
+
+  const costNote = !hasCost
+    ? `<p class="cost-note">Cost columns empty — add token prices to config/prices.yaml</p>`
+    : "";
+
   const hasEmbedding = D.samples && D.samples.some(
     s => s.scorer === "reference_match" && Object.values(s.answers || {}).some(a => a.sim !== undefined)
   );
@@ -809,29 +941,23 @@ function renderResults(D) {
       evaluation of factual or open-ended tasks.
     </div>` : "";
 
-  // $/1K tok column header: for self-hosted rows this is inference-only
-  const c1kLabel = lb.some(r => r.cost_basis === "self-hosted")
-    ? "$ / 1k tok *"
-    : "$ / 1k tok";
-  const c1kFootnote = lb.some(r => r.cost_basis === "self-hosted")
-    ? `<p class="cost-note">* Self-hosted $/1K tok = inference time only (excludes deploy startup tax shown separately).</p>`
-    : "";
-
   document.getElementById("results-section").innerHTML = `
     <div class="results-section">
       <div class="panel" style="animation-delay:.02s;margin-top:0">
         <p class="plabel">Leaderboard &mdash; ${esc(D.meta.task_name)}</p>
+        <div style="overflow-x:auto">
         <table>
           <tr>
             <th class="l">Model</th>
-            <th>${esc(scoreLabel)}</th>
-            <th>Mean lat</th>
-            <th>p95 lat</th>
-            <th>${c1kLabel}</th>
-            <th>Run cost</th>
+            <th style="text-align:right">${esc(scoreLabel)}</th>
+            <th style="text-align:right">Mean lat</th>
+            ${deployHead}
+            <th style="text-align:right">${c1kLabel}</th>
+            <th style="text-align:right">Total cost</th>
           </tr>
           ${boardRows}
         </table>
+        </div>
         ${costNote}
         ${c1kFootnote}
         ${embedCaveat}
@@ -852,10 +978,10 @@ function renderResults(D) {
 
 // ── samples table ─────────────────────────────────────────────────────────────
 function scoreDetail(ans) {
-  if (ans.field_f1  !== undefined) return `field_f1 ${(ans.field_f1*100).toFixed(0)}%`;
-  if (ans.sim       !== undefined) return `sim ${(ans.sim*100).toFixed(0)}%`;
+  if (ans.field_f1    !== undefined) return `field_f1 ${(ans.field_f1*100).toFixed(0)}%`;
+  if (ans.sim         !== undefined) return `sim ${(ans.sim*100).toFixed(0)}%`;
   if (ans.judge_score !== undefined) return `judge ${(ans.judge_score*100).toFixed(0)}%`;
-  if (ans.match     !== undefined) return ans.match ? "exact match" : "no match";
+  if (ans.match       !== undefined) return ans.match ? "exact match" : "no match";
   return "";
 }
 
@@ -873,10 +999,10 @@ function buildSamples(D) {
     const answerCells = mids.map(mid => {
       const ans = row.answers[mid];
       if (!ans) return `<td class="s-answer"><span style="color:var(--faint)">—</span></td>`;
-      const ok      = ans.correct;
-      const score   = (ans.score * 100).toFixed(0) + "%";
-      const detail  = scoreDetail(ans);
-      const text    = String(ans.text || "").slice(0, 120);
+      const ok     = ans.correct;
+      const score  = (ans.score * 100).toFixed(0) + "%";
+      const detail = scoreDetail(ans);
+      const text   = String(ans.text || "").slice(0, 120);
       return `<td class="s-answer">
         <span class="s-pill ${ok?'ok':'bad'}">${ok?"✓":"✗"} ${score}</span>
         ${detail ? `<div class="s-detail">${esc(detail)}</div>` : ""}
@@ -922,11 +1048,14 @@ function buildScatter(lb, modelIdx) {
     return `<p class="empty" style="padding:20px 0;font-size:12px">Add prices to config/prices.yaml to enable this chart.</p>`;
   }
   const W=520,H=310,m={t:18,r:70,b:46,l:46};
-  const pts = lb.filter(r=>r.cost_per_1k_tokens_usd!=null).map(r=>({x:r.cost_per_1k_tokens_usd,y:r.accuracy,
-    label:r.model.replace(/-instruct$/i,"").replace(/-it$/i,""),i:modelIdx[r.model]}));
+  const pts = lb.filter(r=>r.cost_per_1k_tokens_usd!=null).map(r=>({
+    x:r.cost_per_1k_tokens_usd, y:r.accuracy,
+    label:r.model.replace(/-instruct$/i,"").replace(/-it$/i,""),
+    i:modelIdx[r.model]
+  }));
   const xs=pts.map(p=>p.x),ys=pts.map(p=>p.y);
-  const xmin=Math.min(...xs)*.82,xmax=Math.max(...xs)*1.12;
-  const ymin=Math.max(0,Math.min(...ys)-.18),ymax=1;
+  const xmin=Math.min(...xs)*.82, xmax=Math.max(...xs)*1.12;
+  const ymin=Math.max(0,Math.min(...ys)-.18), ymax=1;
   const X=v=>m.l+(v-xmin)/(xmax-xmin)*(W-m.l-m.r);
   const Y=v=>H-m.b-(v-ymin)/(ymax-ymin)*(H-m.t-m.b);
   let s=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Score vs cost">`;
@@ -943,7 +1072,7 @@ function buildScatter(lb, modelIdx) {
   s+=`<line class="ax" x1="${m.l}" y1="${m.t}" x2="${m.l}" y2="${H-m.b}"/>`;
   const hasHosted = lb.some(r=>r.cost_basis==="hosted");
   const hasSelf   = lb.some(r=>r.cost_basis==="self-hosted");
-  const basisNote = hasHosted && hasSelf ? " (hosted & self-hosted)" : hasHosted ? " (hosted · token price)" : " (self-hosted · gpu/hr)";
+  const basisNote = hasHosted && hasSelf ? " (mixed)" : hasHosted ? " (token price)" : " (gpu/hr · inf only)";
   s+=`<text class="axtitle" x="${(m.l+W-m.r)/2}" y="${H-4}" text-anchor="middle">$ / 1k tokens${basisNote}</text>`;
   s+=`<text class="axtitle" transform="translate(12,${(m.t+H-m.b)/2}) rotate(-90)" text-anchor="middle">score</text>`;
   const sorted=[...pts].sort((a,b)=>a.x-b.x);
@@ -979,18 +1108,19 @@ function buildLatency(lb, modelIdx) {
 async function init() {
   renderMethods();
   try {
-    const [tasks, catalog, selection] = await Promise.all([
+    const [tasks, catalog, selection, priceData] = await Promise.all([
       fetch("/api/tasks").then(r => { if(!r.ok) throw new Error(); return r.json(); }),
       fetch("/api/catalog").then(r => { if(!r.ok) throw new Error(); return r.json(); }),
       fetch("/api/selection").then(r => { if(!r.ok) throw new Error(); return r.json(); }),
+      fetch("/api/prices").then(r => r.json()).catch(() => ({prices:{}})),
     ]);
+    _pricesMap = (priceData && priceData.prices) ? priceData.prices : {};
     renderExamples(tasks);
     renderPicker(catalog, selection);
-    // default: select first built-in example
     if (tasks.length) selectBuiltin(tasks[0].id);
   } catch(e) {
     document.getElementById("catalog-area").innerHTML =
-      `<p class="empty">Start the server: <code>uv run scripts/server.py</code></p>`;
+      `<p class="empty">Start the server: <code>py -3 scripts/server.py</code></p>`;
     document.getElementById("run-btn").disabled = true;
   }
 }
