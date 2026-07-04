@@ -1,5 +1,4 @@
 # Updated by dashboard picker.
 compare:
-  - meta-llama/Llama-3.1-70B-Instruct
-  - mistralai/Mistral-7B-Instruct-v0.3
-  - google/gemma-2-2b-it
+  - Qwen/Qwen3-32B
+  - google/gemma-3-27b-it
