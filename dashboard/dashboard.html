@@ -144,6 +144,7 @@
   .flag-vision{color:#C4A4F0;border:1px solid #C4A4F0}
   .flag-reasoning{color:var(--amber);border:1px solid var(--amber)}
   .flag-embedding{color:var(--cyan);border:1px solid var(--cyan)}
+  .flag-multigpu{color:#7B9EFF;border:1px solid #7B9EFF}
 
   /* run bar */
   .run-bar{display:flex;align-items:center;gap:14px;margin-top:18px;
@@ -574,6 +575,7 @@ function modelFlagHtml(m) {
   let f = "";
   if (m.reasoning) f += `<span class="flag flag-reasoning">thinking</span>`;
   if (m.embedding) f += `<span class="flag flag-embedding">embedding</span>`;
+  if (m.tensor_parallel_size > 1) f += `<span class="flag flag-multigpu" title="Requires ${m.tensor_parallel_size} GPUs — provisioning may take up to 25 min">${m.tensor_parallel_size}&times;GPU</span>`;
   return f;
 }
 
@@ -677,7 +679,7 @@ function renderPicker(catalog, selection) {
             <td class="gpu-spec-vram">4&times;48 = 192 GB</td>
             <td>128</td><td>768 GB</td>
             <td class="gpu-spec-rate">~$6.20</td>
-            <td class="gpu-spec-models">70B &ndash; 72B</td>
+            <td class="gpu-spec-models">70B &ndash; 72B &nbsp;<span class="flag flag-multigpu" style="font-size:9px;padding:0 4px" title="4 GPUs must be allocated simultaneously — provisioning budget is 25 min">4&times;GPU</span></td>
           </tr>
         </tbody>
       </table></div>
@@ -687,7 +689,7 @@ function renderPicker(catalog, selection) {
     html += `
     <div class="section-hdr">
       <div class="section-title">🖥&nbsp; Self-hosted (Serverless Endpoint)</div>
-      <div class="section-note">⚠ Deploys a GPU on demand — takes <b>5–20 min</b> depending on Nebius capacity (measured 5.6–18 min). Billed per <b>GPU-hour</b> from create to delete.</div>
+      <div class="section-note">⚠ Deploys a GPU on demand — single-GPU takes <b>5–20 min</b>; <span class="flag flag-multigpu" style="font-size:9px;padding:0 4px;vertical-align:baseline">4×GPU</span> models may wait <b>up to 25 min</b> for 4 simultaneous GPUs. Billed per <b>GPU-hour</b> from create to delete.</div>
     </div>
     ${renderModelSection(selfModels, selSet, "self")}`;
   }

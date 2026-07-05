@@ -430,10 +430,11 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
         mid                  = m[mid_key]
         platform             = m.get("preset", "gpu-l40s-a")
         preset               = m.get("instance_type", "1gpu-8vcpu-32gb")
-        tensor_parallel_size = m.get("tensor_parallel_size", 1)
-        max_model_len        = m.get("max_model_len", 8192)
-        load_timeout_s       = m.get("load_timeout_s", 480)
-        rate_hr              = m.get("rate_hr", 1.82)
+        tensor_parallel_size  = m.get("tensor_parallel_size", 1)
+        max_model_len         = m.get("max_model_len", 8192)
+        load_timeout_s        = m.get("load_timeout_s", 480)
+        provision_timeout_s   = m.get("provision_timeout_s", 900)
+        rate_hr               = m.get("rate_hr", 1.82)
         auth_token           = secrets.token_hex(32)
 
         tp_note = f", TP={tensor_parallel_size}" if tensor_parallel_size > 1 else ""
@@ -459,7 +460,8 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
         try:
             base_url = orchestrator.wait_ready(endpoint_id, auth_token,
                                                progress_cb=_ep_progress_cb,
-                                               load_timeout_s=load_timeout_s)
+                                               load_timeout_s=load_timeout_s,
+                                               provision_timeout_s=provision_timeout_s)
             t_ready  = time.time()
 
             client = openai.OpenAI(

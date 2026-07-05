@@ -331,12 +331,14 @@ if __name__ == "__main__":
     # Confirm the key runtime parameters so we can verify without deploying
     from src.orchestrator import create_endpoint as _ce, wait_ready as _wr
     import inspect as _ins
+    _wr_sig = _ins.signature(_wr)
     _mml  = _ins.signature(_ce).parameters["max_model_len"].default
-    _lto  = _ins.signature(_wr).parameters["load_timeout_s"].default
+    _lto  = _wr_sig.parameters["load_timeout_s"].default
+    _pto  = _wr_sig.parameters["provision_timeout_s"].default
     print(f"  [server] create_endpoint defaults: max_model_len={_mml}")
-    print(f"  [server] wait_ready: PROVISIONING≤15m STARTING≤5m "
-          f"RUNNING≤per-model (default {_lto}s={_lto//60}m) — cap=PROV+START+RUNNING+5m")
-    del _sp, _r, _sha, _ce, _wr, _ins, _mml, _lto
+    print(f"  [server] wait_ready: PROVISIONING≤per-model ({_pto//60}m default, 25m for 4×GPU) "
+          f"STARTING≤5m RUNNING≤per-model ({_lto//60}m default)")
+    del _sp, _r, _sha, _ce, _wr, _ins, _wr_sig, _mml, _lto, _pto
     # ─────────────────────────────────────────────────────────────────────────
 
     print("\nLoading prices...")

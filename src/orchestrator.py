@@ -213,30 +213,31 @@ def _extract_url(data: dict) -> str | None:
 
 
 def wait_ready(endpoint_id: str, auth_token: str, progress_cb=None,
-               load_timeout_s: int = 480) -> str:
+               load_timeout_s: int = 480,
+               provision_timeout_s: int = 900) -> str:
     """
     Poll until the endpoint is RUNNING and the model weights are loaded.
     Returns the HTTPS base URL (without /v1 suffix).
 
     Per-stage budgets:
-      PROVISIONING  15 min  — GPU allocation queue (no billing)
-      STARTING       5 min  — image pull + VM boot
-      RUNNING    load_timeout_s  — vLLM weight download + load (billing GPU)
-      Hard cap   dynamic  — PROVISIONING + STARTING + load_timeout_s + 5 min margin
+      PROVISIONING  provision_timeout_s  — GPU allocation queue (no billing)
+      STARTING                 5 min     — image pull + VM boot
+      RUNNING         load_timeout_s     — vLLM weight download + load (billing GPU)
+      Hard cap        dynamic            — PROVISIONING + STARTING + load_timeout_s + 5 min
 
-    load_timeout_s defaults to 8 min; set higher in catalog for large models
-    (e.g. 600s for 27–32B, 900s for 70B+ / large MoE).
+    provision_timeout_s: 15 min default; use 25 min for multi-GPU presets (harder to fulfill).
+    load_timeout_s: 8 min default; set higher for large models (e.g. 600s for 32B, 900s for 70B+).
 
     progress_cb(**kw): called each poll with ep_state and ep_elapsed_s.
     """
     import requests
 
     STAGE_BUDGETS: dict[str, int] = {
-        "PROVISIONING": 900,            # 15 min — no billing; GPU capacity may be tight
-        "STARTING":     300,            # 5 min — image pull / VM boot
-        "RUNNING":      load_timeout_s, # per-model — vLLM weight download + load
+        "PROVISIONING": provision_timeout_s, # no billing; multi-GPU needs more time
+        "STARTING":     300,                 # 5 min — image pull / VM boot
+        "RUNNING":      load_timeout_s,      # per-model — vLLM weight download + load
     }
-    HARD_CAP = 900 + 300 + load_timeout_s + 300  # 5-min margin past worst-case stages
+    HARD_CAP = provision_timeout_s + 300 + load_timeout_s + 300  # 5-min margin
 
     t_start  = time.time()
     deadline = t_start + HARD_CAP
