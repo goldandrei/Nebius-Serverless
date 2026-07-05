@@ -276,10 +276,13 @@ def wait_ready(endpoint_id: str, auth_token: str, progress_cb=None,
         for op in status.get("reconciling_operations", []):
             op_s = (op.get("status") or {})
             detail = detail or op_s.get("message") or op_s.get("error") or ""
+        if "RUNNING" not in stage_t0:
+            fallback = "GPU provisioning failed — insufficient capacity; try again later"
+        else:
+            fallback = "check server logs (vLLM crash: OOM, max_model_len, weight load failure)"
         raise RuntimeError(
             "Endpoint entered ERROR state"
-            + (f" — {detail}" if detail else
-               " — check server logs (vLLM crash: OOM, max_model_len, weight load failure)")
+            + (f" — {detail}" if detail else f" — {fallback}")
         )
 
     # ── Phase 1: wait for PROVISIONING → STARTING → RUNNING ──────────────────
