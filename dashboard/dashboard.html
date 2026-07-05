@@ -259,6 +259,7 @@
       <button class="run-btn" id="run-btn" disabled>Run comparison</button>
       <span class="run-status" id="run-status"></span>
     </div>
+    <div id="run-deploy-explain" style="display:none;margin-top:8px;padding:8px 12px;border-left:2px solid var(--line);font-family:var(--mono);font-size:11px;line-height:1.8;color:var(--dim)"></div>
     <div id="routing-plan" style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--dim);line-height:1.8;min-height:18px"></div>
   </div>
 
@@ -556,7 +557,6 @@ function modelFamily(id) {
 
 function modelFlagHtml(m) {
   let f = "";
-  if (m.vision)    f += `<span class="flag flag-vision">vision</span>`;
   if (m.reasoning) f += `<span class="flag flag-reasoning">thinking</span>`;
   if (m.embedding) f += `<span class="flag flag-embedding">embedding</span>`;
   return f;
@@ -595,12 +595,10 @@ function renderModelSection(models, selSet, basis) {
       const gated   = m.gated    ? '<span class="gated">GATED</span>' : "";
       const flags   = modelFlagHtml(m);
       const meta    = basis === "hosted" ? hostedMetaHtml(m) : selfMetaHtml(m);
-      const dimCls  = m.embedding ? " dimmed" : "";
-      const dis     = m.embedding ? " disabled" : "";
-      html += `<label class="model-item${selSet.has(m.id)?" checked":""}${dimCls}">
-        <input type="checkbox" class="model-check" value="${esc(m.id)}" ${checked}${dis}>
+      html += `<label class="model-item${selSet.has(m.id)?" checked":""}">
+        <input type="checkbox" class="model-check" value="${esc(m.id)}" ${checked}>
         <span>
-          <div class="mname">${esc(name)}${gated}${flags}</div>
+          <div class="mname">${esc(name)}${basisTagFor(m)}${gated}${flags}</div>
           <div class="mmeta">${meta}</div>
         </span>
       </label>`;
@@ -617,17 +615,15 @@ function renderPicker(catalog, selection) {
   selectionOrder = selection.slice(0, MAX_MODELS);
   const selSet = new Set(selectionOrder);
 
-  const selfModels   = catalog.filter(m => m.basis !== "hosted");
-  const hostedModels = catalog.filter(m => m.basis === "hosted");
+  const selfModels   = catalog.filter(m => m.basis !== "hosted" && !m.embedding);
+  const hostedModels = catalog.filter(m => m.basis === "hosted"  && !m.embedding);
 
   let html = `
     <div class="badge-legend">
-      <span><span class="basis-tag basis-self">endpoint GPU</span>&nbsp;deploys a GPU on demand (slow, $/hr)</span>
+      <span><span class="basis-tag basis-self">endpoint GPU</span>&nbsp;deploys a GPU on demand — may take time to deploy ($/hr)</span>
       <span><span class="basis-tag basis-hosted">hosted API</span>&nbsp;Token Factory, instant ($/token)</span>
       <span><span class="gated">GATED</span>&nbsp;needs HuggingFace token</span>
-      <span><span class="flag flag-vision">vision</span>&nbsp;image inputs</span>
       <span><span class="flag flag-reasoning">thinking</span>&nbsp;extended reasoning</span>
-      <span><span class="flag flag-embedding">embedding</span>&nbsp;scorer only, not for inference</span>
     </div>`;
 
   if (selfModels.length) {
@@ -699,10 +695,28 @@ function routingPlanHtml() {
 }
 
 // ── run ───────────────────────────────────────────────────────────────────────
+const STAGE_EXPLANATIONS = {
+  PROVISIONING: "Allocating a GPU from Nebius — this is the queue step and the most variable part.",
+  STARTING:     "GPU allocated — pulling the vLLM container image and booting it.",
+  RUNNING:      "Container up — starting the vLLM server.",
+  loading:      "Downloading model weights from Hugging Face and loading onto the GPU.",
+  evaluating:   "Endpoint ready — running your eval requests.",
+};
+
 function setStatus(msg, type) {
   const el = document.getElementById("run-status");
   el.className = "run-status" + (type ? " " + type : "");
   el.innerHTML = msg;
+}
+
+function updateDeployExplain(state) {
+  const el = document.getElementById("run-deploy-explain");
+  if (!state) { el.style.display = "none"; el.innerHTML = ""; return; }
+  const exp = STAGE_EXPLANATIONS[state] || "";
+  el.style.display = "block";
+  el.innerHTML =
+    `<span style="color:var(--faint)">Self-hosted models deploy a GPU on demand; this takes a few minutes and only happens once per model.</span>` +
+    (exp ? `<br><b style="color:var(--dim)">${esc(state)}</b> &mdash; ${esc(exp)}` : "");
 }
 
 let _pollTimer = null;
@@ -719,6 +733,7 @@ function startProgressPoll() {
 
       if (p.n_items > 0) {
         // Active inference
+        updateDeployExplain(null);
         const name = p.model ? esc(p.model.split("/").pop()) : "…";
         setStatus(
           `<span class="spinner"></span>` +
@@ -731,14 +746,15 @@ function startProgressPoll() {
           ? `${Math.floor(elapsed / 60)}m ${elapsed % 60}s`
           : `${elapsed}s`;
         const model = p.ep_model ? esc(p.ep_model.split("/").pop()) : "";
-        const stateLabel = esc(p.ep_state);
         setStatus(
           `<span class="spinner"></span>` +
           (model ? `${model} — ` : "") +
-          `<b>${stateLabel}</b> &middot; ${elapsedStr} elapsed` +
+          `<b>${esc(p.ep_state)}</b> &middot; ${elapsedStr} elapsed` +
           ` &middot; <span style="color:var(--faint)">expected 5–20 min, no ETA from Nebius</span>`
         );
+        updateDeployExplain(p.ep_state);
       } else {
+        updateDeployExplain(null);
         setStatus(`<span class="spinner"></span>Deploying endpoint${dots}`);
       }
     } catch(e) { /* network hiccup — keep existing status */ }
@@ -775,6 +791,7 @@ document.getElementById("run-btn").addEventListener("click", async () => {
     await waitForDone();
   } catch(e) {
     stopProgressPoll();
+    updateDeployExplain(null);
     setStatus("Error: " + esc(e.message), "err");
     btn.disabled = selectionOrder.length === 0;
   }
@@ -790,6 +807,7 @@ async function waitForDone() {
 
     if (p.done && !p.running) {
       stopProgressPoll();
+      updateDeployExplain(null);
       if (p.error) {
         setStatus("Error: " + esc(p.error), "err");
         btn.disabled = selectionOrder.length === 0;

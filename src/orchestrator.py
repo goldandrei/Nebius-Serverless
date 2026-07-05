@@ -6,6 +6,7 @@ The `nebius` binary (Linux/macOS only) is invoked:
 """
 import json
 import os
+import re
 import secrets
 import shlex
 import subprocess
@@ -14,6 +15,59 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+# ── secret redaction ──────────────────────────────────────────────────────────
+
+_REDACT_PATTERNS = [
+    (re.compile(r'--token\s+\S+'),        '--token [REDACTED]'),
+    (re.compile(r'Token:\s+\S+'),         'Token: [REDACTED]'),
+    (re.compile(r'HF_TOKEN=\S+'),         'HF_TOKEN=[REDACTED]'),
+    (re.compile(r'\b[0-9a-f]{40,}\b'),    '[REDACTED]'),   # long hex secrets
+]
+
+def _redact(text: str) -> str:
+    """Strip auth tokens and long secrets from any string before surfacing it."""
+    for pattern, replacement in _REDACT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
+# ── stderr → human reason ─────────────────────────────────────────────────────
+
+_REASON_PATTERNS = [
+    (re.compile(r'no preset found with name = "([^"]+)"'),
+     lambda m: f'GPU preset "{m.group(1)}" is not available — check that the '
+               f'instance_type in catalog.yaml is valid for this platform.'),
+    (re.compile(r'no platform found with name = "([^"]+)"'),
+     lambda m: f'GPU platform "{m.group(1)}" is not available in your account or region.'),
+    (re.compile(r'gated|access to the model|401|unauthorized', re.I),
+     lambda _: 'Model access denied — model may be gated. Accept the license on '
+               'huggingface.co and set HF_TOKEN in your .env.'),
+    (re.compile(r'quota|limit exceeded', re.I),
+     lambda _: 'GPU quota exceeded — check your project limits in the Nebius console.'),
+    (re.compile(r'insufficient.{0,20}capacity|no.{0,10}capacity', re.I),
+     lambda _: 'Insufficient GPU capacity — try again later or choose a different instance type.'),
+    (re.compile(r'out.of.memory|OOM', re.I),
+     lambda _: 'Out of GPU memory — the model is too large for this preset.'),
+]
+
+def _extract_reason(stderr: str) -> str:
+    """Parse nebius CLI stderr and return a short, human-readable failure reason."""
+    for pattern, formatter in _REASON_PATTERNS:
+        m = pattern.search(stderr)
+        if m:
+            return formatter(m)
+    # Pull first desc = ... fragment
+    m = re.search(r'desc\s*=\s*([^\n\r]+)', stderr)
+    if m:
+        return m.group(1).strip()
+    # Fall back to first substantive line
+    skip = re.compile(r'^(Hint|This issue|Trace|  -)', re.I)
+    for line in stderr.splitlines():
+        line = re.sub(r'^Error:\s*rpc error:\s*code\s*=\s*\S+\s*desc\s*=\s*', '', line.strip())
+        if line and not skip.match(line):
+            return line
+    return "Deployment failed — see server logs for details."
 
 
 def _nebius_cmd(args: list[str]) -> list[str]:
@@ -27,7 +81,12 @@ def _nebius_cmd(args: list[str]) -> list[str]:
 def _run(*args) -> dict:
     """Run `nebius <args> --format json` and return parsed output."""
     cmd = _nebius_cmd(list(args) + ["--format", "json"])
-    r = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "") + (e.stdout or "")
+        print(f"    [nebius] {_redact(stderr)}", flush=True)   # full detail server-side
+        raise RuntimeError(_extract_reason(stderr)) from None
     text = r.stdout.strip()
     return json.loads(text) if text and text not in ("{}", "{}") else {}
 
@@ -42,14 +101,19 @@ def _run_create_async(args: list[str]) -> str:
     Parse the Endpoint ID line directly.
     """
     cmd = _nebius_cmd(args)
-    r = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    except subprocess.CalledProcessError as e:
+        stderr = (e.stderr or "") + (e.stdout or "")
+        print(f"    [nebius] {_redact(stderr)}", flush=True)   # full detail server-side
+        raise RuntimeError(_extract_reason(stderr)) from None
     output = r.stdout + r.stderr
     for line in output.splitlines():
         line = line.strip()
         if line.startswith("Endpoint ID:"):
             return line.split(":", 1)[1].strip()
     raise RuntimeError(
-        f"Could not find 'Endpoint ID:' in create output:\n{output}"
+        f"Could not find 'Endpoint ID:' in create output:\n{_redact(output)}"
     )
 
 
@@ -74,7 +138,9 @@ def _slug(model_id: str) -> str:
 # ── single endpoint ────────────────────────────────────────────────────────────
 
 def create_endpoint(model_id: str, platform: str, preset: str,
-                    auth_token: str = None) -> str:
+                    auth_token: str = None,
+                    tensor_parallel_size: int = 1,
+                    max_model_len: int = 8192) -> str:
     """
     Create a Nebius Serverless AI Endpoint running vllm/vllm-openai.
 
@@ -86,14 +152,23 @@ def create_endpoint(model_id: str, platform: str, preset: str,
     if auth_token is None:
         auth_token = secrets.token_hex(32)
 
-    hf_token = os.environ.get("HF_TOKEN", "")
+    hf_token  = os.environ.get("HF_TOKEN", "").strip()
+    # Only forward a real token — placeholder values cause spurious HF auth warnings.
+    hf_valid  = hf_token.startswith("hf_") and len(hf_token) > 20
+
     name = f"eval-{_slug(model_id)}"
+    vllm_args = (
+        f"--model {model_id} --host 0.0.0.0 --port 8000"
+        f" --max-model-len {max_model_len}"
+    )
+    if tensor_parallel_size > 1:
+        vllm_args += f" --tensor-parallel-size {tensor_parallel_size}"
     args = [
         "ai", "endpoint", "create",
         "--name", name,
         "--image", "vllm/vllm-openai:latest",
         "--container-command", "python3 -m vllm.entrypoints.openai.api_server",
-        "--args", f"--model {model_id} --host 0.0.0.0 --port 8000",
+        "--args", vllm_args,
         "--platform", platform,
         "--preset", preset,
         "--container-port", "8000",
@@ -105,8 +180,13 @@ def create_endpoint(model_id: str, platform: str, preset: str,
         "--parent-id", _project_id(),
         "--async",
     ]
-    if hf_token:
+    if hf_valid:
         args += ["--env", f"HF_TOKEN={hf_token}"]
+
+    # Print the command that will be sent to the CLI — token redacted — so the
+    # server log is the authoritative record of what actually ran.
+    display = " ".join(f'"{a}"' if " " in str(a) else str(a) for a in args)
+    print(f"    [cmd] {_redact(display)}", flush=True)
 
     endpoint_id = _run_create_async(args)
     print(f"    created {endpoint_id} ({platform}/{preset})", flush=True)
@@ -132,31 +212,82 @@ def _extract_url(data: dict) -> str | None:
     return None
 
 
-def wait_ready(endpoint_id: str, auth_token: str, timeout_s: int = 1800,
-               progress_cb=None) -> str:
+def wait_ready(endpoint_id: str, auth_token: str, progress_cb=None) -> str:
     """
     Poll until the endpoint is RUNNING and the model weights are loaded.
     Returns the HTTPS base URL (without /v1 suffix).
 
-    progress_cb: optional callable(**kw) — called with ep_state and ep_elapsed_s
-                 on each poll so the dashboard can show live state.
+    Per-stage budgets (fail fast rather than holding a billing GPU):
+      PROVISIONING  8 min  — GPU allocation queue
+      STARTING      5 min  — image pull + VM boot
+      RUNNING       8 min  — vLLM weight load (from when RUNNING first seen)
+      Hard cap     15 min  — absolute ceiling across all stages
+
+    progress_cb(**kw): called each poll with ep_state and ep_elapsed_s.
     """
-    deadline = time.time() + timeout_s
+    import requests
+
+    STAGE_BUDGETS: dict[str, int] = {
+        "PROVISIONING": 480,   # 8 min — if stuck, GPU capacity is unavailable
+        "STARTING":     300,   # 5 min — image pull / VM boot
+        "RUNNING":      480,   # 8 min — vLLM weight load
+    }
+    HARD_CAP = 900  # 15 min overall
+
     t_start  = time.time()
+    deadline = t_start + HARD_CAP
+    stage_t0: dict[str, float] = {}  # state → wall time first observed
     base_url = None
 
+    def _note_stage(state: str) -> None:
+        if state and state not in stage_t0:
+            stage_t0[state] = time.time()
+
+    def _check_stage_budget(state: str) -> None:
+        budget = STAGE_BUDGETS.get(state)
+        if not budget or state not in stage_t0:
+            return
+        spent = time.time() - stage_t0[state]
+        if spent <= budget:
+            return
+        if state == "PROVISIONING":
+            raise RuntimeError(
+                f"Stuck in PROVISIONING for {spent/60:.1f} min — "
+                f"GPU capacity unavailable; try again later or choose a different instance type."
+            )
+        raise RuntimeError(
+            f"Stage {state} exceeded {budget//60} min budget "
+            f"({spent/60:.1f} min elapsed) — see server logs for details."
+        )
+
+    def _check_error(data: dict) -> None:
+        status = data.get("status", {})
+        if status.get("state") != "ERROR":
+            return
+        detail = status.get("message") or status.get("error") or ""
+        for op in status.get("reconciling_operations", []):
+            op_s = (op.get("status") or {})
+            detail = detail or op_s.get("message") or op_s.get("error") or ""
+        raise RuntimeError(
+            "Endpoint entered ERROR state"
+            + (f" — {detail}" if detail else
+               " — check server logs (vLLM crash: OOM, max_model_len, weight load failure)")
+        )
+
+    # ── Phase 1: wait for PROVISIONING → STARTING → RUNNING ──────────────────
     print("    polling for RUNNING state...", flush=True)
     while time.time() < deadline:
-        data  = get_endpoint(endpoint_id)
-        state = data.get("status", {}).get("state", "")
+        data    = get_endpoint(endpoint_id)
+        state   = data.get("status", {}).get("state", "")
         elapsed = time.time() - t_start
         print(f"    state={state}  elapsed={elapsed:.0f}s", flush=True)
 
         if progress_cb:
             progress_cb(ep_state=state, ep_elapsed_s=elapsed)
 
-        if state == "ERROR":
-            raise RuntimeError(f"Endpoint {endpoint_id} entered ERROR state")
+        _check_error(data)
+        _note_stage(state)
+        _check_stage_budget(state)
 
         url = _extract_url(data)
         if url and state == "RUNNING":
@@ -166,15 +297,25 @@ def wait_ready(endpoint_id: str, auth_token: str, timeout_s: int = 1800,
         time.sleep(15)
 
     if not base_url:
-        raise TimeoutError(f"Endpoint {endpoint_id} not ready after {timeout_s}s")
+        raise TimeoutError(
+            f"Endpoint {endpoint_id} did not reach RUNNING within {HARD_CAP//60} min"
+        )
 
-    # Wait for the model to actually respond on /v1/models
-    import requests
+    # ── Phase 2: wait for vLLM to respond on /v1/models ──────────────────────
+    # Re-check endpoint state on EVERY poll — vLLM can crash and flip to ERROR
+    # within seconds of RUNNING, and we must not hold the billing GPU for 8 min.
+    _note_stage("RUNNING")  # in case phase 1 never recorded it
     print(f"    endpoint at {base_url} — waiting for model weights...", flush=True)
     while time.time() < deadline:
         elapsed = time.time() - t_start
+
+        data = get_endpoint(endpoint_id)
+        _check_error(data)
+        _check_stage_budget("RUNNING")
+
         if progress_cb:
             progress_cb(ep_state="loading", ep_elapsed_s=elapsed)
+
         try:
             r = requests.get(
                 f"{base_url}/v1/models",
@@ -186,9 +327,12 @@ def wait_ready(endpoint_id: str, auth_token: str, timeout_s: int = 1800,
                 return base_url
         except requests.RequestException:
             pass
+
         time.sleep(20)
 
-    raise TimeoutError(f"Model never responded at {base_url}/v1/models in {timeout_s}s")
+    raise TimeoutError(
+        f"Endpoint {endpoint_id} not ready within {HARD_CAP//60} min overall"
+    )
 
 
 def delete_endpoint(endpoint_id: str) -> None:

@@ -392,8 +392,33 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
     import openai
     from src import orchestrator, storage
 
-    mid_key = "id"
-    embed   = _make_embed()
+    mid_key   = "id"
+    hf_token  = os.environ.get("HF_TOKEN", "").strip()
+    # Real HF tokens are "hf_" + ≥20 alphanumeric chars; shorter values are placeholders.
+    hf_valid  = hf_token.startswith("hf_") and len(hf_token) > 20
+
+    # Gated pre-check: fail fast before spending any GPU time or API credits.
+    for m in models:
+        if m.get("gated") and not hf_valid:
+            short = m[mid_key].split("/")[-1]
+            hf_id = m[mid_key]
+            if hf_token:
+                msg = (
+                    f"⚠ {short} is a gated model but HF_TOKEN looks like a placeholder "
+                    f"('{hf_token[:12]}…'). Replace it with a real token from "
+                    f"huggingface.co/settings/tokens. Also accept the model license at "
+                    f"huggingface.co/{hf_id} before deploying."
+                )
+            else:
+                msg = (
+                    f"⚠ {short} is a gated model. To self-host it you must: "
+                    f"(1) accept its license on huggingface.co/{hf_id}, and "
+                    f"(2) set HF_TOKEN in your .env. "
+                    f"Or choose an ungated model, or use the hosted Token Factory version if available."
+                )
+            raise RuntimeError(msg)
+
+    embed    = _make_embed()
 
     per_model = {m[mid_key]: {"lat": [], "cost_per_1k": [], "req_cost": [],
                                "score": 0.0, "correct": 0,
@@ -402,18 +427,28 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
     scorer_by_task  = {task["id"]: task.get("scorer", "programmatic") for task in tasks}
 
     for m in models:
-        mid        = m[mid_key]
-        platform   = m.get("preset", "gpu-l40s-a")
-        preset     = m.get("instance_type", "1gpu-8vcpu-32gb")
-        rate_hr    = m.get("rate_hr", 1.55)
-        auth_token = secrets.token_hex(32)
+        mid                  = m[mid_key]
+        platform             = m.get("preset", "gpu-l40s-a")
+        preset               = m.get("instance_type", "1gpu-8vcpu-32gb")
+        tensor_parallel_size = m.get("tensor_parallel_size", 1)
+        max_model_len        = m.get("max_model_len", 8192)
+        rate_hr              = m.get("rate_hr", 1.82)
+        auth_token           = secrets.token_hex(32)
 
-        print(f"\n[{mid}] creating endpoint ({platform}/{preset})...", flush=True)
+        tp_note = f", TP={tensor_parallel_size}" if tensor_parallel_size > 1 else ""
+        print(f"\n[{mid}] creating endpoint ({platform}/{preset}{tp_note}, ctx={max_model_len})...",
+              flush=True)
         if progress_cb:
             progress_cb(ep_model=mid, ep_state="PROVISIONING", ep_elapsed_s=0,
                         n_items=0, item_idx=0)
-        t_created   = time.time()
-        endpoint_id = orchestrator.create_endpoint(mid, platform, preset, auth_token)
+        t_created = time.time()
+        try:
+            endpoint_id = orchestrator.create_endpoint(mid, platform, preset, auth_token,
+                                                        tensor_parallel_size=tensor_parallel_size,
+                                                        max_model_len=max_model_len)
+        except RuntimeError as e:
+            short = mid.split("/")[-1]
+            raise RuntimeError(f"Endpoint deployment failed for {short}: {e}") from None
 
         # Wrap progress_cb to also inject ep_model so the dashboard knows which model
         def _ep_progress_cb(**kw):
@@ -466,7 +501,10 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
                 }
 
         finally:
-            orchestrator.delete_endpoint(endpoint_id)
+            try:
+                orchestrator.delete_endpoint(endpoint_id)
+            except Exception as _del_err:
+                print(f"    [warn] delete {endpoint_id} failed: {_del_err}", flush=True)
 
         t_eval_done  = time.time()
 

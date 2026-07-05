@@ -1,12 +1,29 @@
 # Full model catalog — every model the harness knows how to run.
 # Add any HF model ID supported by vLLM here.
 #
-# preset / instance_type: choose based on VRAM needed (fp16: ~2 GB per 1B params)
-#   gpu-l40s-a  / 1gpu-8vcpu-32gb   — L40S 48 GB, good up to ~20B fp16
-#   gpu-h100-sxm / 1gpu-20vcpu-200gb — H100 80 GB, good up to ~70B fp16
+# preset / instance_type: VERIFIED valid strings from `nebius compute platform list`
+# (run that command to re-confirm; these are the exact preset names the API accepts)
 #
-# rate_hr: VERIFY on https://nebius.com/pricing before reporting costs
-#   L40S ~$1.55/hr  |  H100 SXM ~$3.80/hr  |  H200 SXM ~$5.50/hr
+#   Single-GPU:
+#   gpu-l40s-a   / 1gpu-8vcpu-32gb    — 1×L40S 48 GB VRAM (Intel), good up to ~20B fp16
+#   gpu-h100-sxm / 1gpu-16vcpu-200gb  — 1×H100 80 GB VRAM, good up to ~38B fp16  ← 16 vCPU, NOT 20
+#   gpu-h200-sxm / 1gpu-16vcpu-200gb  — 1×H200 141 GB VRAM, good for ~47B MoE (e.g. Mixtral)
+#
+#   Multi-GPU (L40S-D AMD, PCIe — no NVLink; requires --tensor-parallel-size N in vLLM args):
+#   gpu-l40s-d   / 4gpu-128vcpu-768gb  — 4×L40S 192 GB VRAM total, good for 70B/72B fp16; TP=4
+#   gpu-l40s-d   / 2gpu-64vcpu-384gb   — 2×L40S  96 GB VRAM total; too tight for 47B+ MoE
+#
+#   (H100/H200 multi-GPU only comes in 8-GPU NVLink form at $30+/hr — avoid for evals)
+#
+# tensor_parallel_size: required for multi-GPU presets; injected into vLLM --args by orchestrator
+#
+# rate_hr: verified 2026-07-04 from nebius.com/prices (on-demand, per GPU-hour)
+#   L40S-A Intel  $1.82/hr  |  L40S-D AMD $1.55/hr  |  H100 SXM $3.85/hr  |  H200 SXM $4.50/hr
+#   4×L40S-D = 4 × $1.55 = $6.20/hr (pricing page shows "from" $1.55; 4-GPU preset may differ — verify)
+#
+# max_model_len: vLLM context window cap. Default 8192 (our eval prompts are short).
+#   Without this, vLLM uses the model's config max (e.g. 131072 for 32B) which needs
+#   gigabytes of KV-cache VRAM and will OOM on a single GPU. Override per-model if needed.
 #
 # gated: true — requires HF_TOKEN + license acceptance on hf.co
 #
@@ -30,7 +47,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.25, p_wrong_intent: 0.30, p_slot_err: 0.45,
            p_ref_err: 0.45, judge_score_mean: 0.35, judge_score_sd: 0.12,
            lat_mean: 0.22, lat_sd: 0.05}
@@ -40,7 +57,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.05, p_wrong_intent: 0.10, p_slot_err: 0.22,
            p_ref_err: 0.22, judge_score_mean: 0.58, judge_score_sd: 0.11,
            lat_mean: 0.46, lat_sd: 0.08}
@@ -50,7 +67,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.02, p_wrong_intent: 0.05, p_slot_err: 0.14,
            p_ref_err: 0.12, judge_score_mean: 0.72, judge_score_sd: 0.10,
            lat_mean: 0.82, lat_sd: 0.11}
@@ -60,7 +77,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.02, p_slot_err: 0.06,
            p_ref_err: 0.04, judge_score_mean: 0.86, judge_score_sd: 0.09,
            lat_mean: 2.10, lat_sd: 0.22}
@@ -70,7 +87,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.03,
            p_ref_err: 0.02, judge_score_mean: 0.92, judge_score_sd: 0.07,
            lat_mean: 4.40, lat_sd: 0.38}
@@ -79,18 +96,20 @@ models:
     tokenfactory_ok: false
     basis: self-hosted
     preset: gpu-h100-sxm
-    instance_type: 1gpu-20vcpu-200gb
-    rate_hr: 3.80
+    instance_type: 1gpu-16vcpu-200gb
+    rate_hr: 3.85
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
            p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.06,
            lat_mean: 4.90, lat_sd: 0.45}
 
+  # 72B fp16 = 144 GB — fits 4×L40S-D (192 GB VRAM total); TP=4 required
   - id: Qwen/Qwen2.5-72B-Instruct
     tokenfactory_ok: false
     basis: self-hosted
-    preset: gpu-h100-sxm
-    instance_type: 1gpu-20vcpu-200gb
-    rate_hr: 3.80
+    preset: gpu-l40s-d
+    instance_type: 4gpu-128vcpu-768gb
+    tensor_parallel_size: 4
+    rate_hr: 6.20
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
            p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
            lat_mean: 7.80, lat_sd: 0.70}
@@ -98,9 +117,8 @@ models:
   - id: Qwen/Qwen3-32B
     tokenfactory_ok: true
     basis: hosted
-    preset: gpu-h100-sxm
-    instance_type: 1gpu-20vcpu-200gb
-    rate_hr: 3.80
+    preset: token-factory
+    instance_type: hosted-api
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
            p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.05,
            lat_mean: 5.50, lat_sd: 0.50}
@@ -111,7 +129,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
            p_ref_err: 0.04, judge_score_mean: 0.85, judge_score_sd: 0.09,
            lat_mean: 2.15, lat_sd: 0.22}
@@ -121,7 +139,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.02,
            p_ref_err: 0.02, judge_score_mean: 0.91, judge_score_sd: 0.07,
            lat_mean: 4.45, lat_sd: 0.40}
@@ -132,7 +150,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.18, p_wrong_intent: 0.22, p_slot_err: 0.38,
            p_ref_err: 0.38, judge_score_mean: 0.45, judge_score_sd: 0.12,
            lat_mean: 0.28, lat_sd: 0.06}
@@ -142,7 +160,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.03, p_slot_err: 0.10,
            p_ref_err: 0.10, judge_score_mean: 0.75, judge_score_sd: 0.10,
            lat_mean: 1.05, lat_sd: 0.16}
@@ -154,18 +172,20 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
            p_ref_err: 0.04, judge_score_mean: 0.87, judge_score_sd: 0.08,
            lat_mean: 2.50, lat_sd: 0.26}
 
+  # 70B fp16 = 140 GB — fits 4×L40S-D (192 GB total), 52 GB KV headroom; TP=4 required
   - id: meta-llama/Llama-3.1-70B-Instruct
     gated: true
     tokenfactory_ok: false
     basis: self-hosted
-    preset: gpu-h100-sxm
-    instance_type: 1gpu-20vcpu-200gb
-    rate_hr: 3.80
+    preset: gpu-l40s-d
+    instance_type: 4gpu-128vcpu-768gb
+    tensor_parallel_size: 4
+    rate_hr: 6.20
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
            p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
            lat_mean: 9.00, lat_sd: 0.90}
@@ -175,9 +195,8 @@ models:
     gated: true
     tokenfactory_ok: true
     basis: hosted
-    preset: gpu-h100-sxm
-    instance_type: 1gpu-20vcpu-200gb
-    rate_hr: 3.80
+    preset: token-factory
+    instance_type: hosted-api
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
            p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
            lat_mean: 9.20, lat_sd: 0.92}
@@ -188,17 +207,18 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.01, p_wrong_intent: 0.03, p_slot_err: 0.09,
            p_ref_err: 0.07, judge_score_mean: 0.83, judge_score_sd: 0.09,
            lat_mean: 2.00, lat_sd: 0.20}
 
+  # MoE: 46.7B total params, all experts loaded by vLLM = ~93 GB fp16 > H100 80 GB → needs H200
   - id: mistralai/Mixtral-8x7B-Instruct-v0.1
     tokenfactory_ok: false
     basis: self-hosted
-    preset: gpu-h100-sxm
-    instance_type: 1gpu-20vcpu-200gb
-    rate_hr: 3.80
+    preset: gpu-h200-sxm
+    instance_type: 1gpu-16vcpu-200gb
+    rate_hr: 4.50
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
            p_ref_err: 0.03, judge_score_mean: 0.90, judge_score_sd: 0.08,
            lat_mean: 3.80, lat_sd: 0.35}
@@ -209,7 +229,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.04, p_wrong_intent: 0.08, p_slot_err: 0.20,
            p_ref_err: 0.18, judge_score_mean: 0.62, judge_score_sd: 0.11,
            lat_mean: 0.55, lat_sd: 0.09}
@@ -219,7 +239,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.02, p_slot_err: 0.06,
            p_ref_err: 0.04, judge_score_mean: 0.88, judge_score_sd: 0.08,
            lat_mean: 2.70, lat_sd: 0.28}
@@ -228,8 +248,8 @@ models:
     tokenfactory_ok: false
     basis: self-hosted
     preset: gpu-h100-sxm
-    instance_type: 1gpu-20vcpu-200gb
-    rate_hr: 3.80
+    instance_type: 1gpu-16vcpu-200gb
+    rate_hr: 3.85
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
            p_ref_err: 0.01, judge_score_mean: 0.94, judge_score_sd: 0.06,
            lat_mean: 4.20, lat_sd: 0.40}
@@ -237,9 +257,8 @@ models:
   - id: google/gemma-3-27b-it
     tokenfactory_ok: true
     basis: hosted
-    preset: gpu-h100-sxm
-    instance_type: 1gpu-20vcpu-200gb
-    rate_hr: 3.80
+    preset: token-factory
+    instance_type: hosted-api
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
            p_ref_err: 0.01, judge_score_mean: 0.94, judge_score_sd: 0.06,
            lat_mean: 4.20, lat_sd: 0.40}
@@ -250,7 +269,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.10, p_wrong_intent: 0.18, p_slot_err: 0.32,
            p_ref_err: 0.28, judge_score_mean: 0.55, judge_score_sd: 0.11,
            lat_mean: 0.35, lat_sd: 0.07}
@@ -261,7 +280,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.06, p_wrong_intent: 0.12, p_slot_err: 0.25,
            p_ref_err: 0.22, judge_score_mean: 0.58, judge_score_sd: 0.11,
            lat_mean: 0.50, lat_sd: 0.09}
@@ -271,7 +290,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.02, p_slot_err: 0.05,
            p_ref_err: 0.04, judge_score_mean: 0.87, judge_score_sd: 0.09,
            lat_mean: 2.30, lat_sd: 0.24}
@@ -281,7 +300,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
            p_ref_err: 0.04, judge_score_mean: 0.86, judge_score_sd: 0.09,
            lat_mean: 2.60, lat_sd: 0.26}
@@ -291,7 +310,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
            p_ref_err: 0.02, judge_score_mean: 0.92, judge_score_sd: 0.07,
            lat_mean: 4.60, lat_sd: 0.42}
@@ -300,8 +319,8 @@ models:
     tokenfactory_ok: false
     basis: self-hosted
     preset: gpu-h100-sxm
-    instance_type: 1gpu-20vcpu-200gb
-    rate_hr: 3.80
+    instance_type: 1gpu-16vcpu-200gb
+    rate_hr: 3.85
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
            p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.06,
            lat_mean: 5.20, lat_sd: 0.48}
@@ -312,7 +331,7 @@ models:
     basis: self-hosted
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
-    rate_hr: 1.55
+    rate_hr: 1.82
     mock: {p_bad_json: 0.01, p_wrong_intent: 0.04, p_slot_err: 0.10,
            p_ref_err: 0.08, judge_score_mean: 0.80, judge_score_sd: 0.10,
            lat_mean: 0.90, lat_sd: 0.12}
