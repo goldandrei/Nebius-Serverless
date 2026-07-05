@@ -212,27 +212,31 @@ def _extract_url(data: dict) -> str | None:
     return None
 
 
-def wait_ready(endpoint_id: str, auth_token: str, progress_cb=None) -> str:
+def wait_ready(endpoint_id: str, auth_token: str, progress_cb=None,
+               load_timeout_s: int = 480) -> str:
     """
     Poll until the endpoint is RUNNING and the model weights are loaded.
     Returns the HTTPS base URL (without /v1 suffix).
 
-    Per-stage budgets (fail fast rather than holding a billing GPU):
-      PROVISIONING  8 min  — GPU allocation queue
-      STARTING      5 min  — image pull + VM boot
-      RUNNING       8 min  — vLLM weight load (from when RUNNING first seen)
-      Hard cap     15 min  — absolute ceiling across all stages
+    Per-stage budgets:
+      PROVISIONING  15 min  — GPU allocation queue (no billing)
+      STARTING       5 min  — image pull + VM boot
+      RUNNING    load_timeout_s  — vLLM weight download + load (billing GPU)
+      Hard cap   dynamic  — PROVISIONING + STARTING + load_timeout_s + 5 min margin
+
+    load_timeout_s defaults to 8 min; set higher in catalog for large models
+    (e.g. 600s for 27–32B, 900s for 70B+ / large MoE).
 
     progress_cb(**kw): called each poll with ep_state and ep_elapsed_s.
     """
     import requests
 
     STAGE_BUDGETS: dict[str, int] = {
-        "PROVISIONING": 900,   # 15 min — no billing; GPU capacity may be tight
-        "STARTING":     300,   # 5 min — image pull / VM boot
-        "RUNNING":      480,   # 8 min — vLLM weight load
+        "PROVISIONING": 900,            # 15 min — no billing; GPU capacity may be tight
+        "STARTING":     300,            # 5 min — image pull / VM boot
+        "RUNNING":      load_timeout_s, # per-model — vLLM weight download + load
     }
-    HARD_CAP = 1800  # 30 min overall (worst-case: 15+5+8 + margin)
+    HARD_CAP = 900 + 300 + load_timeout_s + 300  # 5-min margin past worst-case stages
 
     t_start  = time.time()
     deadline = t_start + HARD_CAP

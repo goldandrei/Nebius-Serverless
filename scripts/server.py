@@ -329,14 +329,14 @@ if __name__ == "__main__":
     _sha = _r.stdout.strip() if _r.returncode == 0 else "unknown"
     print(f"  [server] git={_sha}  (restart server after every code change)")
     # Confirm the key runtime parameters so we can verify without deploying
-    from src.orchestrator import create_endpoint as _ce
+    from src.orchestrator import create_endpoint as _ce, wait_ready as _wr
     import inspect as _ins
-    _sig  = _ins.signature(_ce)
-    _mml  = _sig.parameters["max_model_len"].default
-    _cap  = 1800  # HARD_CAP in wait_ready — update here if changed
+    _mml  = _ins.signature(_ce).parameters["max_model_len"].default
+    _lto  = _ins.signature(_wr).parameters["load_timeout_s"].default
     print(f"  [server] create_endpoint defaults: max_model_len={_mml}")
-    print(f"  [server] wait_ready hard_cap={_cap}s  (PROVISIONING≤15m STARTING≤5m RUNNING≤8m, cap=30m)")
-    del _sp, _r, _sha, _ce, _ins, _sig, _mml, _cap
+    print(f"  [server] wait_ready: PROVISIONING≤15m STARTING≤5m "
+          f"RUNNING≤per-model (default {_lto}s={_lto//60}m) — cap=PROV+START+RUNNING+5m")
+    del _sp, _r, _sha, _ce, _wr, _ins, _mml, _lto
     # ─────────────────────────────────────────────────────────────────────────
 
     print("\nLoading prices...")

@@ -98,6 +98,7 @@ models:
     preset: gpu-h100-sxm
     instance_type: 1gpu-16vcpu-200gb
     rate_hr: 3.85
+    load_timeout_s: 600  # 10 min — 64 GB weights on H100
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
            p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.06,
            lat_mean: 4.90, lat_sd: 0.45}
@@ -110,6 +111,7 @@ models:
     instance_type: 4gpu-128vcpu-768gb
     tensor_parallel_size: 4
     rate_hr: 6.20
+    load_timeout_s: 900  # 15 min — 144 GB weights sharded across 4 GPUs
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
            p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
            lat_mean: 7.80, lat_sd: 0.70}
@@ -186,6 +188,7 @@ models:
     instance_type: 4gpu-128vcpu-768gb
     tensor_parallel_size: 4
     rate_hr: 6.20
+    load_timeout_s: 900  # 15 min — 140 GB weights sharded across 4 GPUs
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
            p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
            lat_mean: 9.00, lat_sd: 0.90}
@@ -219,6 +222,7 @@ models:
     preset: gpu-h200-sxm
     instance_type: 1gpu-16vcpu-200gb
     rate_hr: 4.50
+    load_timeout_s: 900  # 15 min — ~93 GB MoE weights on single H200
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
            p_ref_err: 0.03, judge_score_mean: 0.90, judge_score_sd: 0.08,
            lat_mean: 3.80, lat_sd: 0.35}
@@ -250,6 +254,7 @@ models:
     preset: gpu-h100-sxm
     instance_type: 1gpu-16vcpu-200gb
     rate_hr: 3.85
+    load_timeout_s: 600  # 10 min — 54 GB weights on H100
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
            p_ref_err: 0.01, judge_score_mean: 0.94, judge_score_sd: 0.06,
            lat_mean: 4.20, lat_sd: 0.40}
@@ -321,6 +326,7 @@ models:
     preset: gpu-h100-sxm
     instance_type: 1gpu-16vcpu-200gb
     rate_hr: 3.85
+    load_timeout_s: 600  # 10 min — 64 GB weights on H100
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
            p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.06,
            lat_mean: 5.20, lat_sd: 0.48}
