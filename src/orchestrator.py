@@ -140,7 +140,8 @@ def _slug(model_id: str) -> str:
 def create_endpoint(model_id: str, platform: str, preset: str,
                     auth_token: str = None,
                     tensor_parallel_size: int = 1,
-                    max_model_len: int = 8192) -> str:
+                    max_model_len: int = 8192,
+                    extra_vllm_args: str = "") -> str:
     """
     Create a Nebius Serverless AI Endpoint running vllm/vllm-openai.
 
@@ -163,6 +164,8 @@ def create_endpoint(model_id: str, platform: str, preset: str,
     )
     if tensor_parallel_size > 1:
         vllm_args += f" --tensor-parallel-size {tensor_parallel_size}"
+    if extra_vllm_args:
+        vllm_args += f" {extra_vllm_args.strip()}"
     args = [
         "ai", "endpoint", "create",
         "--name", name,

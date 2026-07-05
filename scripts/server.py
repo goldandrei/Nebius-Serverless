@@ -322,6 +322,25 @@ if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 7860
 
+    # ── tee all output to logs/server.log ────────────────────────────────────
+    class _Tee:
+        def __init__(self, *streams):
+            self._s = streams
+        def write(self, data):
+            for s in self._s: s.write(data)
+        def flush(self):
+            for s in self._s: s.flush()
+        def __getattr__(self, name):
+            return getattr(self._s[0], name)
+
+    _log_path = ROOT / "logs" / "server.log"
+    _log_path.parent.mkdir(exist_ok=True)
+    _log_fh   = open(_log_path, "a", encoding="utf-8", buffering=1)
+    sys.stdout = _Tee(sys.__stdout__, _log_fh)
+    sys.stderr = _Tee(sys.__stderr__, _log_fh)
+    print(f"  [server] logging to {_log_path}")
+    # ─────────────────────────────────────────────────────────────────────────
+
     # ── startup banner — shows git SHA so stale-process issues are obvious ────
     import subprocess as _sp
     _r = _sp.run(["git", "rev-parse", "--short", "HEAD"],

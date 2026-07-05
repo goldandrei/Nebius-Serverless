@@ -111,6 +111,8 @@ models:
     instance_type: 4gpu-128vcpu-768gb
     tensor_parallel_size: 4
     rate_hr: 6.20
+    max_model_len: 4096       # reduced from 8192 — less KV headroom on GDDR6 L40S vs HBM
+    extra_vllm_args: "--enforce-eager"  # skip CUDA graph capture; saves ~3 GB/GPU on L40S-D
     load_timeout_s: 900       # 15 min — 144 GB weights sharded across 4 GPUs
     provision_timeout_s: 2400 # 40 min — 4-GPU allocation harder to fulfill under capacity pressure
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
@@ -189,6 +191,8 @@ models:
     instance_type: 4gpu-128vcpu-768gb
     tensor_parallel_size: 4
     rate_hr: 6.20
+    max_model_len: 4096       # reduced from 8192 — less KV headroom on GDDR6 L40S vs HBM
+    extra_vllm_args: "--enforce-eager"  # skip CUDA graph capture; saves ~3 GB/GPU on L40S-D
     load_timeout_s: 900       # 15 min — 140 GB weights sharded across 4 GPUs
     provision_timeout_s: 2400 # 40 min — 4-GPU allocation harder to fulfill under capacity pressure
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,

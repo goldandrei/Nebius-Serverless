@@ -1,5 +1,6 @@
 .env
 results/*.json
+logs/*.log
 __pycache__/
 *.pyc
 *.pyo

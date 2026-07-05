@@ -434,11 +434,13 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
         max_model_len         = m.get("max_model_len", 8192)
         load_timeout_s        = m.get("load_timeout_s", 480)
         provision_timeout_s   = m.get("provision_timeout_s", 900)
+        extra_vllm_args       = m.get("extra_vllm_args", "")
         rate_hr               = m.get("rate_hr", 1.82)
-        auth_token           = secrets.token_hex(32)
+        auth_token            = secrets.token_hex(32)
 
         tp_note = f", TP={tensor_parallel_size}" if tensor_parallel_size > 1 else ""
-        print(f"\n[{mid}] creating endpoint ({platform}/{preset}{tp_note}, ctx={max_model_len})...",
+        ea_note = f", {extra_vllm_args}" if extra_vllm_args else ""
+        print(f"\n[{mid}] creating endpoint ({platform}/{preset}{tp_note}, ctx={max_model_len}{ea_note})...",
               flush=True)
         if progress_cb:
             progress_cb(ep_model=mid, ep_state="PROVISIONING", ep_elapsed_s=0,
@@ -447,7 +449,8 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
         try:
             endpoint_id = orchestrator.create_endpoint(mid, platform, preset, auth_token,
                                                         tensor_parallel_size=tensor_parallel_size,
-                                                        max_model_len=max_model_len)
+                                                        max_model_len=max_model_len,
+                                                        extra_vllm_args=extra_vllm_args)
         except RuntimeError as e:
             short = mid.split("/")[-1]
             raise RuntimeError(f"Endpoint deployment failed for {short}: {e}") from None
