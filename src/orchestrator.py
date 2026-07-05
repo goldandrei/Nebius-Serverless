@@ -225,7 +225,7 @@ def wait_ready(endpoint_id: str, auth_token: str, progress_cb=None,
       RUNNING         load_timeout_s     — vLLM weight download + load (billing GPU)
       Hard cap        dynamic            — PROVISIONING + STARTING + load_timeout_s + 5 min
 
-    provision_timeout_s: 15 min default; use 25 min for multi-GPU presets (harder to fulfill).
+    provision_timeout_s: 15 min default; use 40 min for multi-GPU presets (harder to fulfill).
     load_timeout_s: 8 min default; set higher for large models (e.g. 600s for 32B, 900s for 70B+).
 
     progress_cb(**kw): called each poll with ep_state and ep_elapsed_s.

@@ -336,7 +336,7 @@ if __name__ == "__main__":
     _lto  = _wr_sig.parameters["load_timeout_s"].default
     _pto  = _wr_sig.parameters["provision_timeout_s"].default
     print(f"  [server] create_endpoint defaults: max_model_len={_mml}")
-    print(f"  [server] wait_ready: PROVISIONING≤per-model ({_pto//60}m default, 25m for 4×GPU) "
+    print(f"  [server] wait_ready: PROVISIONING≤per-model ({_pto//60}m default, 40m for 4×GPU) "
           f"STARTING≤5m RUNNING≤per-model ({_lto//60}m default)")
     del _sp, _r, _sha, _ce, _wr, _ins, _wr_sig, _mml, _lto, _pto
     # ─────────────────────────────────────────────────────────────────────────
