@@ -88,10 +88,25 @@
   .badge-legend{
     display:flex;gap:14px;flex-wrap:wrap;align-items:center;
     font-family:var(--mono);font-size:11px;color:var(--faint);
-    margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--line);
+    margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line);
     line-height:1.9;
   }
   .badge-legend span{display:inline-flex;align-items:center;gap:5px}
+
+  /* GPU preset spec legend */
+  .gpu-legend{margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+  .gpu-legend-title{font-family:var(--mono);font-size:10px;color:var(--faint);
+                    margin-bottom:7px;letter-spacing:.03em;text-transform:uppercase}
+  .gpu-spec-wrap{overflow-x:auto}
+  .gpu-spec-table{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:11px;
+                  font-variant-numeric:tabular-nums}
+  .gpu-spec-table th{color:var(--faint);font-weight:500;text-align:left;
+                     padding:2px 14px 5px 0;border-bottom:1px solid var(--line);white-space:nowrap}
+  .gpu-spec-table td{color:var(--dim);padding:4px 14px 4px 0;white-space:nowrap}
+  .gpu-spec-table tr:last-child td{padding-bottom:0}
+  .gpu-spec-vram{color:var(--txt);font-weight:600}
+  .gpu-spec-rate{color:var(--amber)}
+  .gpu-spec-models{color:var(--faint);font-size:10px}
 
   /* two-section picker */
   .section-hdr{margin:18px 0 10px;padding-top:16px;border-top:1px solid var(--line)}
@@ -624,6 +639,48 @@ function renderPicker(catalog, selection) {
       <span><span class="basis-tag basis-hosted">hosted API</span>&nbsp;Token Factory, instant ($/token)</span>
       <span><span class="gated">GATED</span>&nbsp;needs HuggingFace token</span>
       <span><span class="flag flag-reasoning">thinking</span>&nbsp;extended reasoning</span>
+    </div>
+    <div class="gpu-legend">
+      <div class="gpu-legend-title">Endpoint GPU presets &mdash; all use 450 GB disk &middot; 16 GB /dev/shm &middot; vLLM &middot; ctx 8 192 tokens</div>
+      <div class="gpu-spec-wrap"><table class="gpu-spec-table">
+        <thead><tr>
+          <th>Platform &middot; Preset</th><th>GPU</th><th>VRAM</th><th>vCPU</th><th>RAM</th><th>$/hr</th><th>Models</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>gpu-l40s-a &middot; 1gpu-8vcpu-32gb</td>
+            <td>1&times; L40S (PCIe, GDDR6)</td>
+            <td class="gpu-spec-vram">48 GB</td>
+            <td>8</td><td>32 GB</td>
+            <td class="gpu-spec-rate">$1.82</td>
+            <td class="gpu-spec-models">&#8804;14B</td>
+          </tr>
+          <tr>
+            <td>gpu-h100-sxm &middot; 1gpu-16vcpu-200gb</td>
+            <td>1&times; H100 SXM (NVLink, HBM3)</td>
+            <td class="gpu-spec-vram">80 GB</td>
+            <td>16</td><td>200 GB</td>
+            <td class="gpu-spec-rate">$3.85</td>
+            <td class="gpu-spec-models">27B &ndash; 32B</td>
+          </tr>
+          <tr>
+            <td>gpu-h200-sxm &middot; 1gpu-16vcpu-200gb</td>
+            <td>1&times; H200 SXM (NVLink, HBM3e)</td>
+            <td class="gpu-spec-vram">141 GB</td>
+            <td>16</td><td>200 GB</td>
+            <td class="gpu-spec-rate">$4.50</td>
+            <td class="gpu-spec-models">Mixtral MoE</td>
+          </tr>
+          <tr>
+            <td>gpu-l40s-d &middot; 4gpu-128vcpu-768gb</td>
+            <td>4&times; L40S PCIe (TP=4)</td>
+            <td class="gpu-spec-vram">4&times;48 = 192 GB</td>
+            <td>128</td><td>768 GB</td>
+            <td class="gpu-spec-rate">~$6.20</td>
+            <td class="gpu-spec-models">70B &ndash; 72B</td>
+          </tr>
+        </tbody>
+      </table></div>
     </div>`;
 
   if (selfModels.length) {

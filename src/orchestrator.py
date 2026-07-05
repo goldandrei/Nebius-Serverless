@@ -228,11 +228,11 @@ def wait_ready(endpoint_id: str, auth_token: str, progress_cb=None) -> str:
     import requests
 
     STAGE_BUDGETS: dict[str, int] = {
-        "PROVISIONING": 480,   # 8 min — if stuck, GPU capacity is unavailable
+        "PROVISIONING": 900,   # 15 min — no billing; GPU capacity may be tight
         "STARTING":     300,   # 5 min — image pull / VM boot
         "RUNNING":      480,   # 8 min — vLLM weight load
     }
-    HARD_CAP = 900  # 15 min overall
+    HARD_CAP = 1800  # 30 min overall (worst-case: 15+5+8 + margin)
 
     t_start  = time.time()
     deadline = t_start + HARD_CAP

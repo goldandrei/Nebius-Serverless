@@ -333,9 +333,9 @@ if __name__ == "__main__":
     import inspect as _ins
     _sig  = _ins.signature(_ce)
     _mml  = _sig.parameters["max_model_len"].default
-    _cap  = 900  # HARD_CAP in wait_ready — update here if changed
+    _cap  = 1800  # HARD_CAP in wait_ready — update here if changed
     print(f"  [server] create_endpoint defaults: max_model_len={_mml}")
-    print(f"  [server] wait_ready hard_cap={_cap}s  (PROVISIONING≤8m STARTING≤5m RUNNING≤8m)")
+    print(f"  [server] wait_ready hard_cap={_cap}s  (PROVISIONING≤15m STARTING≤5m RUNNING≤8m, cap=30m)")
     del _sp, _r, _sha, _ce, _ins, _sig, _mml, _cap
     # ─────────────────────────────────────────────────────────────────────────
 

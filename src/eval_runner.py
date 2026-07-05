@@ -426,7 +426,7 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
     answers_by_task = {task["id"]: {} for task in tasks}
     scorer_by_task  = {task["id"]: task.get("scorer", "programmatic") for task in tasks}
 
-    for m in models:
+    for model_idx, m in enumerate(models):
         mid                  = m[mid_key]
         platform             = m.get("preset", "gpu-l40s-a")
         preset               = m.get("instance_type", "1gpu-8vcpu-32gb")
@@ -464,13 +464,15 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
                 base_url=f"{base_url}/v1", api_key=auth_token
             )
 
+            n_tasks = len(tasks)
+            n_models_total = len(models)
             if progress_cb:
                 progress_cb(ep_model=mid, ep_state="evaluating",
                             ep_elapsed_s=time.time() - t_created,
-                            n_items=len(tasks), item_idx=0,
-                            n_models=len(models), model=mid, model_idx=0)
+                            n_items=n_tasks, item_idx=0,
+                            n_models=n_models_total, model=mid, model_idx=model_idx)
 
-            for task in tasks:
+            for task_idx, task in enumerate(tasks):
                 msgs = []
                 if task.get("instruction"):
                     msgs.append({"role": "system", "content": task["instruction"]})
@@ -499,6 +501,12 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
                     "out_tokens": out_tokens,
                     **detail,
                 }
+
+                if progress_cb:
+                    progress_cb(ep_model=mid, ep_state="evaluating",
+                                ep_elapsed_s=time.time() - t_created,
+                                n_items=n_tasks, item_idx=task_idx + 1,
+                                n_models=n_models_total, model=mid, model_idx=model_idx)
 
         finally:
             try:
