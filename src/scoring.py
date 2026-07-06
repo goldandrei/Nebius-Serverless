@@ -42,7 +42,25 @@ def token_f1(a: str, b: str) -> float:
     return 2 * p * r / (p + r)
 
 
+def _strip_think(text: str) -> str:
+    """Remove <think>…</think> blocks emitted by reasoning models."""
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+
+
 def _extract_json(text: str) -> str:
+    """Strip think blocks + fences, return the last {...} span.
+
+    Using the last block (not first-to-last greedy) means a reasoning model
+    that writes example JSON inside its think block, then emits the real
+    answer afterward, still scores on the correct final object.
+    """
+    text = _strip_think(text)
+    text = re.sub(r"```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    # Find all {...} blocks (handles one level of nesting, enough for flat schemas)
+    blocks = re.findall(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
+    if blocks:
+        return blocks[-1]
+    # Fallback: greedy span (last resort — avoids returning bare text)
     m = re.search(r"\{.*\}", text, re.DOTALL)
     return m.group() if m else text
 
@@ -68,10 +86,7 @@ def score_programmatic(answer: str, gold, compare: str = "exact") -> float:
             return 0.0
     if compare == "json_fields":
         try:
-            # Strip markdown code fences, then find the first {...} block
-            text = re.sub(r"```(?:json)?\s*", "", answer, flags=re.IGNORECASE).strip()
-            m = re.search(r"\{.*\}", text, re.DOTALL)
-            pred = json.loads(m.group() if m else text)
+            pred = json.loads(_extract_json(answer))
         except Exception:
             return 0.0
         return field_f1(gold, pred)
@@ -133,9 +148,7 @@ def _make_detail(scorer: str, answer: str, task_item: dict, s: float) -> dict:
         compare = task_item.get("compare", "exact")
         if compare == "json_fields":
             try:
-                text = re.sub(r"```(?:json)?\s*", "", answer, flags=re.IGNORECASE).strip()
-                m = re.search(r"\{.*\}", text, re.DOTALL)
-                json.loads(m.group() if m else text)
+                json.loads(_extract_json(answer))
                 return {"valid_json": True, "field_f1": round(s, 3)}
             except Exception:
                 return {"valid_json": False, "field_f1": 0.0}
