@@ -251,8 +251,7 @@
 
   <p class="eyebrow" id="eyebrow">Nebius · Model eval</p>
   <h1>Model eval dashboard</h1>
-  <p class="meta-line" id="meta"></p>
-  <p class="empty" style="margin-bottom:16px">Fill in your dataset below or pick a built-in example, select models, then click <b>Run comparison</b>.</p>
+  <p class="meta-line" id="meta">Select models in the picker below, then click <b>Run comparison</b>.</p>
   <hr class="divider">
 
   <!-- ── dataset builder ────────────────────────────────────── -->
@@ -276,7 +275,6 @@
       <span class="run-status" id="run-status"></span>
     </div>
     <div id="run-deploy-explain" style="display:none;margin-top:8px;padding:8px 12px;border-left:2px solid var(--line);font-family:var(--mono);font-size:11px;line-height:1.8;color:var(--dim)"></div>
-    <div id="routing-plan" style="margin-top:10px;font-family:var(--mono);font-size:11px;color:var(--dim);line-height:1.8;min-height:18px"></div>
   </div>
 
   <!-- ── results ────────────────────────────────────────────── -->
@@ -727,7 +725,11 @@ function updateSelCount() {
   document.getElementById("sel-count").textContent =
     `${selectionOrder.length} / ${MAX_MODELS} selected`;
   document.getElementById("run-btn").disabled = selectionOrder.length === 0;
-  document.getElementById("routing-plan").innerHTML = routingPlanHtml();
+  const metaEl = document.getElementById("meta");
+  if (!metaEl._runDone) {
+    metaEl.innerHTML = selectionOrder.length ? routingPlanHtml()
+      : `Select models in the picker below, then click <b>Run comparison</b>.`;
+  }
 }
 
 function routingPlanHtml() {
@@ -919,7 +921,9 @@ function renderResults(D) {
   const routeMeta = routing
     ? ` &middot; <b>${routing.endpoint.length}</b> endpoint + <b>${routing.tokenfactory.length}</b> Token Factory`
     : ` &middot; mode <b>${esc(D.meta.mode)}</b>`;
-  document.getElementById("meta").innerHTML =
+  const metaEl2 = document.getElementById("meta");
+  metaEl2._runDone = true;
+  metaEl2.innerHTML =
     `<b>${D.meta.n_models}</b> models &middot; <b>${D.meta.n_tasks}</b> rows &middot; ` +
     `benchmark <b>${esc(D.meta.task_name)}</b>${routeMeta}`;
 
