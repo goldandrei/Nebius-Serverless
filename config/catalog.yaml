@@ -103,18 +103,16 @@ models:
            p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.06,
            lat_mean: 4.90, lat_sd: 0.45}
 
-  # 72B fp16 = 144 GB — fits 4×L40S-D (192 GB VRAM total); TP=4 required
+  # 72B fp8 = ~72 GB — fits single H200 SXM (141 GB HBM3e); fp8 quantized on-the-fly by vLLM
   - id: Qwen/Qwen2.5-72B-Instruct
     tokenfactory_ok: false
     basis: self-hosted
-    preset: gpu-l40s-d
-    instance_type: 4gpu-128vcpu-768gb
-    tensor_parallel_size: 4
-    rate_hr: 6.20
-    max_model_len: 4096       # reduced from 8192 — less KV headroom on GDDR6 L40S vs HBM
-    extra_vllm_args: "--enforce-eager"  # skip CUDA graph capture; saves ~3 GB/GPU on L40S-D
-    load_timeout_s: 900       # 15 min — 144 GB weights sharded across 4 GPUs
-    provision_timeout_s: 2400 # 40 min — 4-GPU allocation harder to fulfill under capacity pressure
+    preset: gpu-h200-sxm
+    instance_type: 1gpu-16vcpu-200gb
+    rate_hr: 4.50
+    max_model_len: 8192
+    extra_vllm_args: "--quantization fp8"
+    load_timeout_s: 900       # 15 min — 72 GB fp8 weights on H200
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
            p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
            lat_mean: 7.80, lat_sd: 0.70}
@@ -182,19 +180,17 @@ models:
            p_ref_err: 0.04, judge_score_mean: 0.87, judge_score_sd: 0.08,
            lat_mean: 2.50, lat_sd: 0.26}
 
-  # 70B fp16 = 140 GB — fits 4×L40S-D (192 GB total), 52 GB KV headroom; TP=4 required
+  # 70B fp8 = ~70 GB — fits single H200 SXM (141 GB HBM3e); fp8 quantized on-the-fly by vLLM
   - id: meta-llama/Llama-3.1-70B-Instruct
     gated: true
     tokenfactory_ok: false
     basis: self-hosted
-    preset: gpu-l40s-d
-    instance_type: 4gpu-128vcpu-768gb
-    tensor_parallel_size: 4
-    rate_hr: 6.20
-    max_model_len: 4096       # reduced from 8192 — less KV headroom on GDDR6 L40S vs HBM
-    extra_vllm_args: "--enforce-eager"  # skip CUDA graph capture; saves ~3 GB/GPU on L40S-D
-    load_timeout_s: 900       # 15 min — 140 GB weights sharded across 4 GPUs
-    provision_timeout_s: 2400 # 40 min — 4-GPU allocation harder to fulfill under capacity pressure
+    preset: gpu-h200-sxm
+    instance_type: 1gpu-16vcpu-200gb
+    rate_hr: 4.50
+    max_model_len: 8192
+    extra_vllm_args: "--quantization fp8"
+    load_timeout_s: 900       # 15 min — 70 GB fp8 weights on H200
     mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
            p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
            lat_mean: 9.00, lat_sd: 0.90}

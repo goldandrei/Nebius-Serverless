@@ -643,7 +643,7 @@ function renderPicker(catalog, selection) {
       <span><span class="flag flag-reasoning">thinking</span>&nbsp;extended reasoning</span>
     </div>
     <div class="gpu-legend">
-      <div class="gpu-legend-title">Endpoint GPU presets &mdash; all use 450 GB disk &middot; 16 GB /dev/shm &middot; vLLM &middot; ctx 8 192 tokens</div>
+      <div class="gpu-legend-title">Endpoint GPU presets &mdash; all use 450 GB disk &middot; 16 GB /dev/shm &middot; vLLM &middot; ctx 8 192 tokens &middot; 70B/72B run fp8</div>
       <div class="gpu-spec-wrap"><table class="gpu-spec-table">
         <thead><tr>
           <th>Platform &middot; Preset</th><th>GPU</th><th>VRAM</th><th>vCPU</th><th>RAM</th><th>$/hr</th><th>Models</th>
@@ -671,15 +671,7 @@ function renderPicker(catalog, selection) {
             <td class="gpu-spec-vram">141 GB</td>
             <td>16</td><td>200 GB</td>
             <td class="gpu-spec-rate">$4.50</td>
-            <td class="gpu-spec-models">Mixtral MoE</td>
-          </tr>
-          <tr>
-            <td>gpu-l40s-d &middot; 4gpu-128vcpu-768gb</td>
-            <td>4&times; L40S PCIe (TP=4)</td>
-            <td class="gpu-spec-vram">4&times;48 = 192 GB</td>
-            <td>128</td><td>768 GB</td>
-            <td class="gpu-spec-rate">~$6.20</td>
-            <td class="gpu-spec-models">70B &ndash; 72B &nbsp;<span class="flag flag-multigpu" style="font-size:9px;padding:0 4px" title="4 GPUs must be allocated simultaneously — provisioning budget is 40 min">4&times;GPU</span></td>
+            <td class="gpu-spec-models">MoE &amp; 70B–72B fp8</td>
           </tr>
         </tbody>
       </table></div>
@@ -689,7 +681,7 @@ function renderPicker(catalog, selection) {
     html += `
     <div class="section-hdr">
       <div class="section-title">🖥&nbsp; Self-hosted (Serverless Endpoint)</div>
-      <div class="section-note">⚠ Deploys a GPU on demand — single-GPU takes <b>5–20 min</b>; <span class="flag flag-multigpu" style="font-size:9px;padding:0 4px;vertical-align:baseline">4×GPU</span> models may wait <b>up to 40 min</b> for 4 simultaneous GPUs. Billed per <b>GPU-hour</b> from create to delete.</div>
+      <div class="section-note">⚠ Deploys a GPU on demand — takes <b>5–20 min</b> to provision, boot, and load weights. Billed per <b>GPU-hour</b> from create to delete.</div>
     </div>
     ${renderModelSection(selfModels, selSet, "self")}`;
   }
