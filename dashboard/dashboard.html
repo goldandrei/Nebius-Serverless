@@ -1007,6 +1007,18 @@ function renderResults(D) {
   const hasEmbedding = D.samples && D.samples.some(
     s => s.scorer === "reference_match" && Object.values(s.answers || {}).some(a => a.sim !== undefined)
   );
+  const hasJsonFields = D.samples && D.samples.some(
+    s => Object.values(s.answers || {}).some(a => a.field_f1 !== undefined)
+  );
+  const jsonFieldsCaveat = hasJsonFields ? `
+    <div style="margin-top:12px;padding:10px 14px;border:1px solid var(--amber);border-radius:8px;
+                font-family:var(--mono);font-size:11px;color:var(--amber);line-height:1.6">
+      ⚠ <b>json_fields scoring uses exact value matching</b> — field values are compared
+      literally, so semantically-equivalent outputs ("every morning" vs "daily",
+      "this weekend" vs "weekend") score as wrong even when correct. Gold answers for this
+      task use the input's exact wording; a model that paraphrases or normalizes may still
+      be penalized. Re-run with <b>LLM-judge</b> scoring for lenient, meaning-sensitive evaluation.
+    </div>` : "";
   const embedCaveat = hasEmbedding ? `
     <div style="margin-top:12px;padding:10px 14px;border:1px solid var(--amber);border-radius:8px;
                 font-family:var(--mono);font-size:11px;color:var(--amber);line-height:1.6">
@@ -1037,6 +1049,7 @@ function renderResults(D) {
         </div>
         ${costNote}
         ${c1kFootnote}
+        ${jsonFieldsCaveat}
         ${embedCaveat}
       </div>
       <div class="two-col">
