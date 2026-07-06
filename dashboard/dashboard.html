@@ -234,7 +234,12 @@
   .s-detail{font-family:var(--mono);font-size:10px;color:var(--faint);
     margin-bottom:3px}
   .s-text{color:var(--dim);font-size:11px;word-break:break-word;
-    line-height:1.4;white-space:pre-wrap;max-height:56px;overflow:hidden}
+    line-height:1.4;white-space:pre-wrap;max-height:56px;overflow:hidden;
+    cursor:pointer;position:relative}
+  .s-text:not(.expanded)::after{content:'';position:absolute;bottom:0;left:0;right:0;
+    height:18px;background:linear-gradient(transparent,var(--panel2))}
+  .s-text.expanded{max-height:none;cursor:auto}
+  .s-text.expanded::after{display:none}
   .toggle-samples{background:none;border:1px solid var(--line);color:var(--dim);
     font-family:var(--mono);font-size:11px;padding:5px 14px;border-radius:6px;
     cursor:pointer;margin-bottom:14px;transition:border-color .12s,color .12s}
@@ -1074,11 +1079,11 @@ function buildSamples(D) {
       const ok     = ans.correct;
       const score  = (ans.score * 100).toFixed(0) + "%";
       const detail = scoreDetail(ans);
-      const text   = String(ans.text || "").slice(0, 120);
+      const text   = String(ans.text || "");
       return `<td class="s-answer">
         <span class="s-pill ${ok?'ok':'bad'}">${ok?"✓":"✗"} ${score}</span>
         ${detail ? `<div class="s-detail">${esc(detail)}</div>` : ""}
-        <div class="s-text">${esc(text)}</div>
+        <div class="s-text" title="Click to expand" onclick="this.classList.toggle('expanded');this.title=this.classList.contains('expanded')?'Click to collapse':'Click to expand'">${esc(text)}</div>
       </td>`;
     }).join("");
 
