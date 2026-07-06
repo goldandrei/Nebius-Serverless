@@ -752,6 +752,7 @@ const STAGE_EXPLANATIONS = {
   RUNNING:      "Container up — starting the vLLM server.",
   loading:      "Downloading model weights from Hugging Face and loading onto the GPU.",
   evaluating:   "Endpoint ready — running your eval requests.",
+  deleting:     "Eval complete — releasing the GPU. Billing stops once the endpoint is deleted.",
 };
 
 function setStatus(msg, type) {
@@ -790,6 +791,15 @@ function startProgressPoll() {
           `<span class="spinner"></span>` +
           `item ${p.item_idx}/${p.n_items} &middot; model ${p.model_idx + 1}/${p.n_models} &middot; ${name}`
         );
+      } else if (p.ep_state === "deleting") {
+        // Deletion in progress — show finishing state, no elapsed clutter
+        const model = p.ep_model ? esc(p.ep_model.split("/").pop()) : "";
+        setStatus(
+          `<span class="spinner"></span>` +
+          (model ? `${model} — ` : "") +
+          `<b>finishing</b> &middot; <span style="color:var(--faint)">releasing GPU…</span>`
+        );
+        updateDeployExplain("deleting");
       } else if (p.ep_state) {
         // Endpoint deploying — show Nebius state + elapsed
         const elapsed  = Math.round(p.ep_elapsed_s || 0);

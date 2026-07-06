@@ -516,6 +516,10 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
                                 n_models=n_models_total, model=mid, model_idx=model_idx)
 
         finally:
+            if progress_cb:
+                progress_cb(ep_model=mid, ep_state="deleting",
+                            ep_elapsed_s=time.time() - t_created,
+                            n_items=0, item_idx=0)
             try:
                 orchestrator.delete_endpoint(endpoint_id)
             except Exception as _del_err:
