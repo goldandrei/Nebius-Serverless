@@ -75,6 +75,7 @@ def _cosine(a, b) -> float:
 # ── scorers ───────────────────────────────────────────────────────────────────
 
 def score_programmatic(answer: str, gold, compare: str = "exact") -> float:
+    answer = _strip_think(answer)
     a = normalize(answer)
     if compare == "exact":
         return 1.0 if a == normalize(str(gold)) else 0.0
@@ -95,6 +96,7 @@ def score_programmatic(answer: str, gold, compare: str = "exact") -> float:
 
 def score_reference(answer: str, reference: str, metric: str = "lexical",
                     threshold: float = 0.6, embed=None) -> float:
+    answer = _strip_think(answer)
     if metric == "lexical":
         return token_f1(normalize(answer), normalize(reference))
     # "embedding" (optional/stretch — needs embed callable)
@@ -103,6 +105,7 @@ def score_reference(answer: str, reference: str, metric: str = "lexical",
 
 def score_judge(instruction: str, input_text: str, answer: str, rubric: str,
                 judge_client, scale: int = 5) -> float:
+    answer = _strip_think(answer)
     if judge_client is None:
         return 0.5  # stub: wire up a real judge endpoint in Phase 2+
     judge_prompt = (
