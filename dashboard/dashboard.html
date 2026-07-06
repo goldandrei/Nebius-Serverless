@@ -1091,7 +1091,7 @@ function buildSamples(D) {
     return `<tr>
       <td class="s-idx">${ri + 1}</td>
       <td class="l s-input">${esc(row.q)}</td>
-      <td class="l s-expected">${esc(String(row.expected).slice(0, 80))}</td>
+      <td class="l s-expected"><span class="s-text" title="Click to expand" onclick="this.classList.toggle('expanded');this.title=this.classList.contains('expanded')?'Click to collapse':'Click to expand'">${esc(String(row.expected))}</span></td>
       ${answerCells}
     </tr>`;
   }).join("");
