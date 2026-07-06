@@ -251,7 +251,6 @@
 
   <p class="eyebrow" id="eyebrow">Nebius · Model eval</p>
   <h1>Model eval dashboard</h1>
-  <p class="meta-line" id="meta">Select models in the picker below, then click <b>Run comparison</b>.</p>
   <hr class="divider">
 
   <!-- ── dataset builder ────────────────────────────────────── -->
@@ -725,11 +724,6 @@ function updateSelCount() {
   document.getElementById("sel-count").textContent =
     `${selectionOrder.length} / ${MAX_MODELS} selected`;
   document.getElementById("run-btn").disabled = selectionOrder.length === 0;
-  const metaEl = document.getElementById("meta");
-  if (!metaEl._runDone) {
-    metaEl.innerHTML = selectionOrder.length ? routingPlanHtml()
-      : `Select models in the picker below, then click <b>Run comparison</b>.`;
-  }
 }
 
 function routingPlanHtml() {
@@ -921,11 +915,6 @@ function renderResults(D) {
   const routeMeta = routing
     ? ` &middot; <b>${routing.endpoint.length}</b> endpoint + <b>${routing.tokenfactory.length}</b> Token Factory`
     : ` &middot; mode <b>${esc(D.meta.mode)}</b>`;
-  const metaEl2 = document.getElementById("meta");
-  metaEl2._runDone = true;
-  metaEl2.innerHTML =
-    `<b>${D.meta.n_models}</b> models &middot; <b>${D.meta.n_tasks}</b> rows &middot; ` +
-    `benchmark <b>${esc(D.meta.task_name)}</b>${routeMeta}`;
 
   const isJudge   = D.meta.scorer === "llm_judge";
   const hasSelf   = lb.some(r => r.cost_basis === "self-hosted");
