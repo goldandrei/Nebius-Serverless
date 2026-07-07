@@ -22,7 +22,7 @@ can mix both:
   JSON fields. No API calls beyond the model itself.
 - **Reference match** — lexical (token F1 word overlap) or embedding
   (cosine similarity) comparison against a reference answer.
-- **LLM judge** — a judge model (default `zai-org/GLM-5.2`, configurable via
+- **LLM judge** — a judge model (default `deepseek-ai/DeepSeek-V4-Pro`, configurable via
   `JUDGE_MODEL`) grades each answer 1–N against a rubric you write. Judge
   token cost is tracked separately from the models being compared.
 

@@ -14,7 +14,8 @@ DATA_DIR      = ROOT / "data"
 CATALOG_FILE  = ROOT / "config" / "catalog.yaml"
 SELECTION_FILE = ROOT / "config" / "models.yaml"
 
-JUDGE_MODEL   = os.environ.get("JUDGE_MODEL", "zai-org/GLM-5.2")
+JUDGE_MODEL        = os.environ.get("JUDGE_MODEL", "deepseek-ai/DeepSeek-V4-Pro")
+MAX_OUTPUT_TOKENS  = int(os.environ.get("MAX_OUTPUT_TOKENS", "2048"))  # bounds contestant output; reasoning models that exceed it get truncated, not hung
 
 
 class JudgeError(Exception):
@@ -399,7 +400,7 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
 
             t0   = time.time()
             resp = client.chat.completions.create(
-                model=mid, messages=msgs, temperature=0
+                model=mid, messages=msgs, temperature=0, max_tokens=MAX_OUTPUT_TOKENS
             )
             lat        = time.time() - t0
             raw        = resp.choices[0].message.content
@@ -583,7 +584,7 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
 
                 t0   = time.time()
                 resp = client.chat.completions.create(
-                    model=mid, messages=msgs, temperature=0
+                    model=mid, messages=msgs, temperature=0, max_tokens=MAX_OUTPUT_TOKENS
                 )
                 lat        = time.time() - t0
                 raw        = resp.choices[0].message.content
