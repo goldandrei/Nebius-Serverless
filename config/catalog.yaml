@@ -27,16 +27,6 @@
 #
 # gated: true — requires HF_TOKEN + license acceptance on hf.co
 #
-# mock profile fields:
-#   Structured output (programmatic scorer):
-#     p_bad_json, p_wrong_intent, p_slot_err
-#   Factual Q&A (reference_match scorer):
-#     p_ref_err       — probability of a wrong factual answer
-#   Instruction following (llm_judge scorer):
-#     judge_score_mean, judge_score_sd — simulated judge verdict distribution
-#   Latency:
-#     lat_mean, lat_sd — response time in seconds
-
 models:
 
   # ── Qwen 2.5 ─────────────────────────────────────────────────────────────────
@@ -48,9 +38,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.25, p_wrong_intent: 0.30, p_slot_err: 0.45,
-           p_ref_err: 0.45, judge_score_mean: 0.35, judge_score_sd: 0.12,
-           lat_mean: 0.22, lat_sd: 0.05}
 
   - id: Qwen/Qwen2.5-1.5B-Instruct
     tokenfactory_ok: false
@@ -58,9 +45,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.05, p_wrong_intent: 0.10, p_slot_err: 0.22,
-           p_ref_err: 0.22, judge_score_mean: 0.58, judge_score_sd: 0.11,
-           lat_mean: 0.46, lat_sd: 0.08}
 
   - id: Qwen/Qwen2.5-3B-Instruct
     tokenfactory_ok: false
@@ -68,9 +52,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.02, p_wrong_intent: 0.05, p_slot_err: 0.14,
-           p_ref_err: 0.12, judge_score_mean: 0.72, judge_score_sd: 0.10,
-           lat_mean: 0.82, lat_sd: 0.11}
 
   - id: Qwen/Qwen2.5-7B-Instruct
     tokenfactory_ok: false
@@ -78,9 +59,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.02, p_slot_err: 0.06,
-           p_ref_err: 0.04, judge_score_mean: 0.86, judge_score_sd: 0.09,
-           lat_mean: 2.10, lat_sd: 0.22}
 
   - id: Qwen/Qwen2.5-14B-Instruct
     tokenfactory_ok: false
@@ -88,9 +66,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.03,
-           p_ref_err: 0.02, judge_score_mean: 0.92, judge_score_sd: 0.07,
-           lat_mean: 4.40, lat_sd: 0.38}
 
   - id: Qwen/Qwen2.5-32B-Instruct
     tokenfactory_ok: false
@@ -99,9 +74,6 @@ models:
     instance_type: 1gpu-16vcpu-200gb
     rate_hr: 3.85
     load_timeout_s: 600  # 10 min — 64 GB weights on H100
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
-           p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.06,
-           lat_mean: 4.90, lat_sd: 0.45}
 
   # 72B fp8 = ~72 GB — fits single H200 SXM (141 GB HBM3e); fp8 quantized on-the-fly by vLLM
   - id: Qwen/Qwen2.5-72B-Instruct
@@ -113,18 +85,12 @@ models:
     max_model_len: 8192
     extra_vllm_args: "--quantization fp8"
     load_timeout_s: 900       # 15 min — 72 GB fp8 weights on H200
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
-           lat_mean: 7.80, lat_sd: 0.70}
 
   - id: Qwen/Qwen3-32B
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.05,
-           lat_mean: 5.50, lat_sd: 0.50}
 
   # ── Qwen 2.5-Coder ───────────────────────────────────────────────────────────
   - id: Qwen/Qwen2.5-Coder-7B-Instruct
@@ -133,9 +99,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
-           p_ref_err: 0.04, judge_score_mean: 0.85, judge_score_sd: 0.09,
-           lat_mean: 2.15, lat_sd: 0.22}
 
   - id: Qwen/Qwen2.5-Coder-14B-Instruct
     tokenfactory_ok: false
@@ -143,9 +106,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.02,
-           p_ref_err: 0.02, judge_score_mean: 0.91, judge_score_sd: 0.07,
-           lat_mean: 4.45, lat_sd: 0.40}
 
   # ── Llama 3.2 (non-gated) ────────────────────────────────────────────────────
   - id: meta-llama/Llama-3.2-1B-Instruct
@@ -154,9 +114,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.18, p_wrong_intent: 0.22, p_slot_err: 0.38,
-           p_ref_err: 0.38, judge_score_mean: 0.45, judge_score_sd: 0.12,
-           lat_mean: 0.28, lat_sd: 0.06}
 
   - id: meta-llama/Llama-3.2-3B-Instruct
     tokenfactory_ok: false
@@ -164,9 +121,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.03, p_slot_err: 0.10,
-           p_ref_err: 0.10, judge_score_mean: 0.75, judge_score_sd: 0.10,
-           lat_mean: 1.05, lat_sd: 0.16}
 
   # ── Llama 3.1 (gated) ────────────────────────────────────────────────────────
   - id: meta-llama/Llama-3.1-8B-Instruct
@@ -176,9 +130,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
-           p_ref_err: 0.04, judge_score_mean: 0.87, judge_score_sd: 0.08,
-           lat_mean: 2.50, lat_sd: 0.26}
 
   # 70B fp8 = ~70 GB — fits single H200 SXM (141 GB HBM3e); fp8 quantized on-the-fly by vLLM
   - id: meta-llama/Llama-3.1-70B-Instruct
@@ -191,9 +142,6 @@ models:
     max_model_len: 8192
     extra_vllm_args: "--quantization fp8"
     load_timeout_s: 900       # 15 min — 70 GB fp8 weights on H200
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
-           lat_mean: 9.00, lat_sd: 0.90}
 
   # ── Llama 3.3 — confirmed on Token Factory ───────────────────────────────────
   - id: meta-llama/Llama-3.3-70B-Instruct
@@ -202,9 +150,6 @@ models:
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.05,
-           lat_mean: 9.20, lat_sd: 0.92}
 
   # ── Mistral ───────────────────────────────────────────────────────────────────
   - id: mistralai/Mistral-7B-Instruct-v0.3
@@ -213,9 +158,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.01, p_wrong_intent: 0.03, p_slot_err: 0.09,
-           p_ref_err: 0.07, judge_score_mean: 0.83, judge_score_sd: 0.09,
-           lat_mean: 2.00, lat_sd: 0.20}
 
   # MoE: 46.7B total params, all experts loaded by vLLM = ~93 GB fp16 > H100 80 GB → needs H200
   - id: mistralai/Mixtral-8x7B-Instruct-v0.1
@@ -225,9 +167,6 @@ models:
     instance_type: 1gpu-16vcpu-200gb
     rate_hr: 4.50
     load_timeout_s: 900  # 15 min — ~93 GB MoE weights on single H200
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
-           p_ref_err: 0.03, judge_score_mean: 0.90, judge_score_sd: 0.08,
-           lat_mean: 3.80, lat_sd: 0.35}
 
   # ── Gemma 2 ───────────────────────────────────────────────────────────────────
   - id: google/gemma-2-2b-it
@@ -236,9 +175,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.04, p_wrong_intent: 0.08, p_slot_err: 0.20,
-           p_ref_err: 0.18, judge_score_mean: 0.62, judge_score_sd: 0.11,
-           lat_mean: 0.55, lat_sd: 0.09}
 
   - id: google/gemma-2-9b-it
     tokenfactory_ok: false
@@ -246,9 +182,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.02, p_slot_err: 0.06,
-           p_ref_err: 0.04, judge_score_mean: 0.88, judge_score_sd: 0.08,
-           lat_mean: 2.70, lat_sd: 0.28}
 
   - id: google/gemma-2-27b-it
     tokenfactory_ok: false
@@ -257,18 +190,12 @@ models:
     instance_type: 1gpu-16vcpu-200gb
     rate_hr: 3.85
     load_timeout_s: 600  # 10 min — 54 GB weights on H100
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
-           p_ref_err: 0.01, judge_score_mean: 0.94, judge_score_sd: 0.06,
-           lat_mean: 4.20, lat_sd: 0.40}
 
   - id: google/gemma-3-27b-it
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
-           p_ref_err: 0.01, judge_score_mean: 0.94, judge_score_sd: 0.06,
-           lat_mean: 4.20, lat_sd: 0.40}
 
   # ── SmolLM2 ───────────────────────────────────────────────────────────────────
   - id: HuggingFaceTB/SmolLM2-1.7B-Instruct
@@ -277,9 +204,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.10, p_wrong_intent: 0.18, p_slot_err: 0.32,
-           p_ref_err: 0.28, judge_score_mean: 0.55, judge_score_sd: 0.11,
-           lat_mean: 0.35, lat_sd: 0.07}
 
   # ── DeepSeek-R1 distill ───────────────────────────────────────────────────────
   - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
@@ -288,9 +212,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.06, p_wrong_intent: 0.12, p_slot_err: 0.25,
-           p_ref_err: 0.22, judge_score_mean: 0.58, judge_score_sd: 0.11,
-           lat_mean: 0.50, lat_sd: 0.09}
 
   - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
     tokenfactory_ok: false
@@ -298,9 +219,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.02, p_slot_err: 0.05,
-           p_ref_err: 0.04, judge_score_mean: 0.87, judge_score_sd: 0.09,
-           lat_mean: 2.30, lat_sd: 0.24}
 
   - id: deepseek-ai/DeepSeek-R1-Distill-Llama-8B
     tokenfactory_ok: false
@@ -308,9 +226,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
-           p_ref_err: 0.04, judge_score_mean: 0.86, judge_score_sd: 0.09,
-           lat_mean: 2.60, lat_sd: 0.26}
 
   - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-14B
     tokenfactory_ok: false
@@ -318,9 +233,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
-           p_ref_err: 0.02, judge_score_mean: 0.92, judge_score_sd: 0.07,
-           lat_mean: 4.60, lat_sd: 0.42}
 
   - id: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
     tokenfactory_ok: false
@@ -329,9 +241,6 @@ models:
     instance_type: 1gpu-16vcpu-200gb
     rate_hr: 3.85
     load_timeout_s: 600  # 10 min — 64 GB weights on H100
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.06,
-           lat_mean: 5.20, lat_sd: 0.48}
 
   # ── Phi-3.5 ───────────────────────────────────────────────────────────────────
   - id: microsoft/Phi-3.5-mini-instruct
@@ -340,9 +249,6 @@ models:
     preset: gpu-l40s-a
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
-    mock: {p_bad_json: 0.01, p_wrong_intent: 0.04, p_slot_err: 0.10,
-           p_ref_err: 0.08, judge_score_mean: 0.80, judge_score_sd: 0.10,
-           lat_mean: 0.90, lat_sd: 0.12}
 
   # ── Token Factory: Qwen ───────────────────────────────────────────────────────
   # basis: hosted → routed to Token Factory API, never creates an endpoint GPU.
@@ -352,18 +258,12 @@ models:
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.05,
-           lat_mean: 1.80, lat_sd: 0.20}
 
   - id: Qwen/Qwen3-235B-A22B-Instruct-2507
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.97, judge_score_sd: 0.04,
-           lat_mean: 5.50, lat_sd: 0.50}
 
   - id: Qwen/Qwen3-Next-80B-A3B-Thinking
     tokenfactory_ok: true
@@ -371,18 +271,12 @@ models:
     reasoning: true
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.00,
-           p_ref_err: 0.00, judge_score_mean: 0.98, judge_score_sd: 0.03,
-           lat_mean: 25.0, lat_sd: 8.0}
 
   - id: Qwen/Qwen3.5-397B-A17B
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.00,
-           p_ref_err: 0.00, judge_score_mean: 0.97, judge_score_sd: 0.04,
-           lat_mean: 8.0, lat_sd: 0.80}
 
   - id: Qwen/Qwen2.5-VL-72B-Instruct
     tokenfactory_ok: true
@@ -390,9 +284,6 @@ models:
     vision: true
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.05,
-           lat_mean: 8.0, lat_sd: 0.80}
 
   - id: Qwen/Qwen3-Embedding-8B
     tokenfactory_ok: true
@@ -400,9 +291,6 @@ models:
     embedding: true
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.50, p_wrong_intent: 0.50, p_slot_err: 0.80,
-           p_ref_err: 0.80, judge_score_mean: 0.20, judge_score_sd: 0.15,
-           lat_mean: 0.50, lat_sd: 0.10}
 
   # ── Token Factory: Nvidia ─────────────────────────────────────────────────────
   # NOTE: exact API IDs — "NVIDIA-Nemotron-3-Nano-30B-A3B" (NVIDIA prefix) and
@@ -412,9 +300,6 @@ models:
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
-           p_ref_err: 0.04, judge_score_mean: 0.88, judge_score_sd: 0.08,
-           lat_mean: 2.0, lat_sd: 0.25}
 
   - id: nvidia/Nemotron-3-Nano-Omni
     tokenfactory_ok: true
@@ -422,36 +307,24 @@ models:
     vision: true
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
-           p_ref_err: 0.04, judge_score_mean: 0.87, judge_score_sd: 0.08,
-           lat_mean: 2.5, lat_sd: 0.30}
 
   - id: nvidia/nemotron-3-super-120b-a12b
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
-           p_ref_err: 0.02, judge_score_mean: 0.94, judge_score_sd: 0.05,
-           lat_mean: 4.0, lat_sd: 0.40}
 
   - id: nvidia/Nemotron-3-Ultra-550b-a55b
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.00,
-           p_ref_err: 0.00, judge_score_mean: 0.97, judge_score_sd: 0.04,
-           lat_mean: 10.0, lat_sd: 1.0}
 
   - id: nvidia/Llama-3_1-Nemotron-Ultra-253B-v1
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.04,
-           lat_mean: 9.0, lat_sd: 0.90}
 
   - id: nvidia/Cosmos3-Super-Reasoner
     tokenfactory_ok: true
@@ -460,9 +333,6 @@ models:
     vision: true
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.96, judge_score_sd: 0.04,
-           lat_mean: 20.0, lat_sd: 5.0}
 
   # ── Token Factory: OpenAI OSS ─────────────────────────────────────────────────
   - id: openai/gpt-oss-120b
@@ -470,9 +340,6 @@ models:
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.05,
-           lat_mean: 4.5, lat_sd: 0.45}
 
   # ── Token Factory: NousResearch ───────────────────────────────────────────────
   - id: NousResearch/Hermes-4-70B
@@ -480,18 +347,12 @@ models:
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.05,
-           lat_mean: 7.5, lat_sd: 0.75}
 
   - id: NousResearch/Hermes-4-405B
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.00,
-           p_ref_err: 0.00, judge_score_mean: 0.97, judge_score_sd: 0.04,
-           lat_mean: 12.0, lat_sd: 1.2}
 
   # ── Token Factory: MiniMax ────────────────────────────────────────────────────
   - id: MiniMaxAI/MiniMax-M2.5
@@ -499,9 +360,6 @@ models:
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.93, judge_score_sd: 0.06,
-           lat_mean: 6.0, lat_sd: 0.60}
 
   # ── Token Factory: GLM ───────────────────────────────────────────────────────
   - id: zai-org/GLM-5.1
@@ -509,18 +367,12 @@ models:
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
-           p_ref_err: 0.02, judge_score_mean: 0.92, judge_score_sd: 0.06,
-           lat_mean: 5.0, lat_sd: 0.50}
 
   - id: zai-org/GLM-5.2
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.02,
-           p_ref_err: 0.02, judge_score_mean: 0.93, judge_score_sd: 0.06,
-           lat_mean: 5.5, lat_sd: 0.55}
 
   # ── Token Factory: Moonshot ───────────────────────────────────────────────────
   - id: moonshotai/Kimi-K2.6
@@ -529,18 +381,12 @@ models:
     vision: true
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.95, judge_score_sd: 0.05,
-           lat_mean: 6.0, lat_sd: 0.60}
 
   - id: moonshotai/Kimi-K2.7-Code
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.01,
-           p_ref_err: 0.01, judge_score_mean: 0.94, judge_score_sd: 0.05,
-           lat_mean: 7.0, lat_sd: 0.70}
 
   # ── Token Factory: DeepSeek ───────────────────────────────────────────────────
   - id: deepseek-ai/DeepSeek-V4-Pro
@@ -548,9 +394,6 @@ models:
     basis: hosted
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.00, p_slot_err: 0.00,
-           p_ref_err: 0.00, judge_score_mean: 0.97, judge_score_sd: 0.04,
-           lat_mean: 8.0, lat_sd: 0.80}
 
   # ── Token Factory: MiniCPM ───────────────────────────────────────────────────
   - id: openbmb/MiniCPM-V-4_5
@@ -559,6 +402,3 @@ models:
     vision: true
     preset: token-factory
     instance_type: hosted-api
-    mock: {p_bad_json: 0.00, p_wrong_intent: 0.01, p_slot_err: 0.04,
-           p_ref_err: 0.04, judge_score_mean: 0.88, judge_score_sd: 0.08,
-           lat_mean: 3.0, lat_sd: 0.35}

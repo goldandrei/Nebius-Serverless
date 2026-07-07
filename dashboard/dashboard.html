@@ -231,6 +231,7 @@
     padding:2px 7px;border-radius:99px;margin-bottom:4px}
   .s-pill.ok{background:rgba(107,208,139,.15);color:var(--good)}
   .s-pill.bad{background:rgba(224,114,138,.15);color:var(--bad)}
+  .s-pill.warn{background:rgba(224,164,88,.15);color:var(--amber);margin-left:4px}
   .s-detail{font-family:var(--mono);font-size:10px;color:var(--faint);
     margin-bottom:3px}
   .s-text{color:var(--dim);font-size:11px;word-break:break-word;
@@ -543,12 +544,16 @@ const SCORER_CAVEATS = {
     and reference embeddings. Semantically correct but differently phrased answers can score
     lower than brief answers that happen to be close in embedding space.
     Use <b>LLM-judge</b> for more robust evaluation.`,
+  llm_judge: `⚠ <b>LLM-judge scoring</b> — scores are model-graded against your rubric and are
+    inherently more subjective than programmatic scoring. A different judge model or rubric
+    wording can shift scores; treat ranks as directional, not exact.`,
 };
 
 function showScorerCaveat(scorer, metric) {
   const el = document.getElementById("scorer-caveat");
   if (!el) return;
-  const key = scorer === "reference_match" ? (metric || "lexical") : null;
+  const key = scorer === "reference_match" ? (metric || "lexical")
+            : scorer === "llm_judge" ? "llm_judge" : null;
   const text = key ? SCORER_CAVEATS[key] : null;
   if (text) {
     el.style.display = "";
@@ -1112,10 +1117,19 @@ function renderResults(D) {
   const firstSample = D.samples && D.samples[0];
   if (firstSample) showScorerCaveat(firstSample.scorer, firstSample.metric);
 
+  const judgeHeader = isJudge && D.meta.judge_model
+    ? `<p class="meta-line" style="margin-bottom:10px">Graded by <b>${esc(D.meta.judge_model)}</b>
+        &middot; <b>${D.meta.judge_calls}</b> gradings
+        &middot; ${D.meta.judge_cost_usd != null ? `$${D.meta.judge_cost_usd.toFixed(4)}` : '<span style="color:var(--faint)">cost n/a</span>'}
+        ${D.meta.judge_errors ? ` &middot; <span style="color:var(--bad)">${D.meta.judge_errors} judge error${D.meta.judge_errors===1?'':'s'}</span>` : ""}
+      </p>`
+    : "";
+
   document.getElementById("results-section").innerHTML = `
     <div class="results-section">
       <div class="panel" style="animation-delay:.02s;margin-top:0">
         <p class="plabel">Leaderboard &mdash; ${esc(D.meta.task_name)}</p>
+        ${judgeHeader}
         <div style="overflow-x:auto">
         <table>
           <tr>
@@ -1169,13 +1183,25 @@ function buildSamples(D) {
     const answerCells = mids.map(mid => {
       const ans = row.answers[mid];
       if (!ans) return `<td class="s-answer"><span style="color:var(--faint)">—</span></td>`;
+      const text      = String(ans.text || "");
+      const selfBadge = ans.self_graded ? `<span class="s-pill warn">self-graded</span>` : "";
+
+      if (ans.judge_error) {
+        return `<td class="s-answer">
+          <span class="s-pill bad">⚠ error</span>${selfBadge}
+          <div class="s-detail">${esc(ans.judge_error)}</div>
+          <div class="s-text" title="Click to expand" onclick="this.classList.toggle('expanded');this.title=this.classList.contains('expanded')?'Click to collapse':'Click to expand'">${esc(text)}</div>
+        </td>`;
+      }
+
       const ok     = ans.correct;
       const score  = (ans.score * 100).toFixed(0) + "%";
       const detail = scoreDetail(ans);
-      const text   = String(ans.text || "");
+      const reason = ans.reason ? `<div class="s-detail">${esc(ans.reason)}</div>` : "";
       return `<td class="s-answer">
-        <span class="s-pill ${ok?'ok':'bad'}">${ok?"✓":"✗"} ${score}</span>
+        <span class="s-pill ${ok?'ok':'bad'}">${ok?"✓":"✗"} ${score}</span>${selfBadge}
         ${detail ? `<div class="s-detail">${esc(detail)}</div>` : ""}
+        ${reason}
         <div class="s-text" title="Click to expand" onclick="this.classList.toggle('expanded');this.title=this.classList.contains('expanded')?'Click to collapse':'Click to expand'">${esc(text)}</div>
       </td>`;
     }).join("");

@@ -244,6 +244,10 @@ class Handler(BaseHTTPRequestHandler):
 
         elif method == "llm_judge":
             rubric = body.get("rubric", "").strip()
+            if not rubric:
+                self._json({"error": "Rubric is required for llm_judge scoring — "
+                                     "a judge with no rubric is meaningless."}, 400)
+                return
             scale  = int(body.get("scale", 5))
             for idx, inp in enumerate(inputs, 1):
                 records.append({"id": idx, "instruction": instruction, "input": inp,

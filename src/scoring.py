@@ -104,10 +104,16 @@ def score_reference(answer: str, reference: str, metric: str = "lexical",
 
 
 def score_judge(instruction: str, input_text: str, answer: str, rubric: str,
-                judge_client, scale: int = 5) -> float:
+                judge_client, scale: int = 5) -> tuple:
+    """Grade one answer against a rubric. Returns (score_0_1, reason, error).
+
+    On success: (float in [0,1], reason string, None).
+    On failure (judge call/parse/validation error): (None, None, error string) —
+    the caller must exclude this item from the model's mean, not count it as 0.
+    """
     answer = _strip_think(answer)
     if judge_client is None:
-        return 0.5  # stub: wire up a real judge endpoint in Phase 2+
+        raise RuntimeError("llm_judge scoring requires a judge_client")
     judge_prompt = (
         "You are grading an answer. Be strict and consistent.\n"
         f"Task: {instruction}\n"
@@ -116,37 +122,52 @@ def score_judge(instruction: str, input_text: str, answer: str, rubric: str,
         f"Rubric: {rubric}\n"
         f'Reply ONLY as JSON: {{"score": <1-{scale}>, "reason": "..."}}'
     )
-    verdict = judge_client.chat(judge_prompt, temperature=0)
-    obj = json.loads(_extract_json(verdict))
-    return max(0.0, min(1.0, obj["score"] / scale))
+    try:
+        verdict   = judge_client.chat(judge_prompt, temperature=0)
+        obj       = json.loads(_extract_json(verdict))
+        raw_score = obj["score"]
+        if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
+            raise ValueError(f"non-numeric score: {raw_score!r}")
+        if not (1 <= raw_score <= scale):
+            raise ValueError(f"score {raw_score} out of range [1,{scale}]")
+        reason = str(obj.get("reason", ""))
+    except Exception as e:
+        judge_client.errors += 1
+        return None, None, f"{type(e).__name__}: {e}"
+    norm = 1.0 if scale <= 1 else (raw_score - 1) / (scale - 1)
+    return max(0.0, min(1.0, norm)), reason, None
 
 
 # ── harness dispatcher ────────────────────────────────────────────────────────
 
-def score_item(record: dict, answer: str, embed=None, judge_client=None) -> float:
+def score_item(record: dict, answer: str, embed=None, judge_client=None) -> tuple:
+    """Returns (score_or_None, reason_or_None, error_or_None)."""
     s = record["scorer"]
     if s == "programmatic":
-        return score_programmatic(answer, record["gold"], record.get("compare", "exact"))
+        return score_programmatic(answer, record["gold"], record.get("compare", "exact")), None, None
     if s == "reference_match":
         return score_reference(answer, record["reference"],
                                record.get("metric", "lexical"),
-                               record.get("threshold", 0.6), embed)
+                               record.get("threshold", 0.6), embed), None, None
     if s == "llm_judge":
         return score_judge(record["instruction"], record["input"], answer,
                            record["rubric"], judge_client, record.get("scale", 5))
-    return 0.0
+    return 0.0, None, None
 
 
 # ── backward-compat wrapper (returns (score, detail) for eval_runner) ─────────
 
-def score(raw_output: str, task_item: dict, scorer_name: str = None, embed=None) -> tuple:
-    name   = scorer_name or task_item.get("scorer", "programmatic")
-    record = {**task_item, "scorer": name}
-    s      = score_item(record, raw_output, embed=embed)
-    return round(s, 4), _make_detail(name, raw_output, task_item, s)
+def score(raw_output: str, task_item: dict, scorer_name: str = None, embed=None,
+         judge_client=None) -> tuple:
+    name             = scorer_name or task_item.get("scorer", "programmatic")
+    record           = {**task_item, "scorer": name}
+    s, reason, error = score_item(record, raw_output, embed=embed, judge_client=judge_client)
+    detail           = _make_detail(name, raw_output, task_item, s, reason, error)
+    return (round(s, 4) if s is not None else None), detail
 
 
-def _make_detail(scorer: str, answer: str, task_item: dict, s: float) -> dict:
+def _make_detail(scorer: str, answer: str, task_item: dict, s, reason: str = None,
+                 error: str = None) -> dict:
     if scorer == "programmatic":
         compare = task_item.get("compare", "exact")
         if compare == "json_fields":
@@ -159,5 +180,7 @@ def _make_detail(scorer: str, answer: str, task_item: dict, s: float) -> dict:
     if scorer == "reference_match":
         return {"sim": round(s, 3)}
     if scorer == "llm_judge":
-        return {"judge_score": round(s, 3), "note": "llm_judge stub"}
+        if error:
+            return {"judge_error": error}
+        return {"judge_score": round(s, 3), "reason": reason}
     return {}

@@ -15,6 +15,55 @@ DATA_DIR      = ROOT / "data"
 CATALOG_FILE  = ROOT / "config" / "catalog.yaml"
 SELECTION_FILE = ROOT / "config" / "models.yaml"
 
+JUDGE_MODEL   = os.environ.get("JUDGE_MODEL", "zai-org/GLM-5.2")
+
+
+class JudgeError(Exception):
+    """Raised when the LLM-judge API call fails after one retry."""
+
+
+class JudgeClient:
+    """Wraps a Token Factory chat model as an LLM judge; tracks usage for cost accounting.
+
+    Shares the same base_url/api_key construction as the tokenfactory backend so judge
+    calls bill against the same Nebius account, but is a separate client instance since
+    a judge may be needed even when comparing only self-hosted (endpoint) models.
+    """
+
+    def __init__(self, client, model: str = JUDGE_MODEL):
+        self.client     = client
+        self.model      = model
+        self.in_tokens  = 0
+        self.out_tokens = 0
+        self.calls      = 0
+        self.errors     = 0
+
+    def chat(self, prompt: str, temperature: float = 0) -> str:
+        last_err = None
+        for _ in range(2):  # one retry
+            try:
+                resp = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature,
+                )
+                self.calls      += 1
+                self.in_tokens  += resp.usage.prompt_tokens
+                self.out_tokens += resp.usage.completion_tokens
+                return resp.choices[0].message.content
+            except Exception as e:
+                last_err = e
+        raise JudgeError(f"judge call failed after retry: {last_err}") from last_err
+
+
+def _validate_llm_judge_rubrics(tasks: list) -> None:
+    for t in tasks:
+        if t.get("scorer") == "llm_judge" and not str(t.get("rubric", "")).strip():
+            raise ValueError(
+                f"Task {t.get('id', '?')} has scorer=llm_judge but an empty rubric — "
+                "a judge with no rubric is meaningless."
+            )
+
 
 # ── embedding ─────────────────────────────────────────────────────────────────
 
@@ -158,6 +207,8 @@ def run(task_file: str = None, progress_cb=None, prices: dict = None) -> dict:
     tasks  = load_tasks(task_file=task_file)
     models = load_config()
 
+    _validate_llm_judge_rubrics(tasks)
+
     first_scorer = tasks[0].get("scorer", "programmatic") if tasks else "programmatic"
     task_meta    = {t["id"]: t for t in available_tasks()}
     task_label   = task_meta.get(task_file, {}).get("name", task_file or "mixed") if task_file else "mixed"
@@ -177,17 +228,25 @@ def run(task_file: str = None, progress_cb=None, prices: dict = None) -> dict:
         flush=True,
     )
 
+    # Lazy judge client — only pay for it when a selected task actually needs grading.
+    judge_client = None
+    if any(t.get("scorer") == "llm_judge" for t in tasks):
+        import openai
+        judge_client = JudgeClient(openai.OpenAI(
+            base_url=os.environ["NEBIUS_BASE_URL"], api_key=os.environ["NEBIUS_API_KEY"],
+        ))
+
     results_tf = None
     results_ep = None
 
     if tf_models:
         results_tf = _run_tokenfactory(
             tasks, tf_models, task_label, first_scorer, task_file,
-            progress_cb, effective_prices,
+            progress_cb, effective_prices, judge_client=judge_client,
         )
     if ep_models:
         results_ep = _run_endpoint(tasks, ep_models, task_label, first_scorer, task_file,
-                                   progress_cb=progress_cb)
+                                   progress_cb=progress_cb, judge_client=judge_client)
 
     # Merge leaderboards — sort by accuracy descending
     leaderboard: list = []
@@ -207,6 +266,33 @@ def run(task_file: str = None, progress_cb=None, prices: dict = None) -> dict:
                 samples_map[key]["answers"] = {}
             samples_map[key]["answers"].update(s.get("answers", {}))
 
+    judge_meta = {
+        "judge_model":      None,
+        "judge_calls":      0,
+        "judge_in_tokens":  0,
+        "judge_out_tokens": 0,
+        "judge_cost_usd":   None,
+        "judge_errors":     0,
+    }
+    if judge_client is not None:
+        p     = effective_prices.get(JUDGE_MODEL, {})
+        p_in  = p.get("price_in_per_1m")
+        p_out = p.get("price_out_per_1m")
+        if p_in is not None and p_out is not None:
+            judge_cost = (judge_client.in_tokens * p_in + judge_client.out_tokens * p_out) / 1_000_000
+        else:
+            judge_cost = None
+            print(f"  [judge] TODO: no price for {JUDGE_MODEL} in prices.yaml — judge_cost_usd will be null",
+                  flush=True)
+        judge_meta = {
+            "judge_model":      JUDGE_MODEL,
+            "judge_calls":      judge_client.calls,
+            "judge_in_tokens":  judge_client.in_tokens,
+            "judge_out_tokens": judge_client.out_tokens,
+            "judge_cost_usd":   round(judge_cost, 6) if judge_cost is not None else None,
+            "judge_errors":     judge_client.errors,
+        }
+
     return {
         "meta": {
             "mode":       "auto",
@@ -217,6 +303,7 @@ def run(task_file: str = None, progress_cb=None, prices: dict = None) -> dict:
             "n_tasks":    len(tasks),
             "benchmark":  task_label,
             "routing":    routing,
+            **judge_meta,
         },
         "leaderboard": leaderboard,
         "samples":     list(samples_map.values()),
@@ -232,11 +319,12 @@ def _build_leaderboard(models, per_model, mid_key, n_tasks):
         p95 = lat_sorted[min(n_tasks - 1, int(round(0.95 * (n_tasks - 1))))]
         gpu   = m.get("endpoint_gpu_type", m.get("preset", ""))
         inst  = m.get("instance_type", f"{m.get('endpoint_gpu_count', 1)}×GPU")
+        score_n = d.get("score_n", n_tasks)
         row = {
             "model":                   mid,
             "preset":                  f"{gpu} / {inst}",
             "cost_basis":              "self-hosted",
-            "accuracy":                round(d["score"] / n_tasks, 4),
+            "accuracy":                round(d["score"] / score_n, 4) if score_n else 0.0,
             "correct":                 d["correct"],
             "n":                       n_tasks,
             "mean_latency_s":          round(statistics.mean(d["lat"]), 3),
@@ -273,7 +361,7 @@ def _load_prices_from_file(prices_file: Path = None) -> dict:
 
 
 def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
-                      progress_cb=None, prices: dict = None):
+                      progress_cb=None, prices: dict = None, judge_client=None):
     """Nebius Token Factory hosted API — no Serverless endpoints or jobs created."""
     import openai
 
@@ -288,7 +376,8 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
     embed   = _make_embed()
     prices  = prices or {}
 
-    per_model = {m[mid_key]: {"lat": [], "in_tokens": [], "out_tokens": [], "score": 0.0, "correct": 0}
+    per_model = {m[mid_key]: {"lat": [], "in_tokens": [], "out_tokens": [],
+                              "score": 0.0, "score_n": 0, "correct": 0}
                  for m in models}
 
     n = len(tasks)
@@ -317,18 +406,23 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
             in_tokens  = resp.usage.prompt_tokens
             out_tokens = resp.usage.completion_tokens
 
-            s, detail = scoring.score(raw, task, embed=embed)
+            s, detail = scoring.score(raw, task, embed=embed, judge_client=judge_client)
 
             per_model[mid]["lat"].append(lat)
             per_model[mid]["in_tokens"].append(in_tokens)
             per_model[mid]["out_tokens"].append(out_tokens)
-            per_model[mid]["score"]   += s
-            per_model[mid]["correct"] += int(s >= 0.5)
+            if s is not None:
+                per_model[mid]["score"]   += s
+                per_model[mid]["score_n"] += 1
+                per_model[mid]["correct"] += int(s >= 0.5)
+
+            if scorer_name == "llm_judge" and mid == JUDGE_MODEL:
+                detail = {**detail, "self_graded": True}
 
             row["answers"][mid] = {
                 "text":       raw,
-                "correct":    s >= 0.5,
-                "score":      round(s, 3),
+                "correct":    s is not None and s >= 0.5,
+                "score":      round(s, 3) if s is not None else None,
                 "latency_s":  round(lat, 3),
                 "in_tokens":  in_tokens,
                 "out_tokens": out_tokens,
@@ -356,11 +450,12 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
             run_cost = None
             c1k      = None
 
+        score_n = d["score_n"]
         leaderboard.append({
             "model":                  mid,
             "preset":                 f"{m['preset']} / {m['instance_type']}",
             "cost_basis":             "hosted",
-            "accuracy":               round(d["score"] / n, 4),
+            "accuracy":               round(d["score"] / score_n, 4) if score_n else 0.0,
             "correct":                d["correct"],
             "n":                      n,
             "mean_latency_s":         round(statistics.mean(d["lat"]), 3),
@@ -387,7 +482,8 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
     }
 
 
-def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_cb=None):
+def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_cb=None,
+                  judge_client=None):
     """Nebius Serverless AI Endpoints — creates and deletes GPU VMs per model."""
     import openai
     from src import orchestrator, storage
@@ -421,7 +517,7 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
     embed    = _make_embed()
 
     per_model = {m[mid_key]: {"lat": [], "cost_per_1k": [], "req_cost": [],
-                               "score": 0.0, "correct": 0,
+                               "score": 0.0, "score_n": 0, "correct": 0,
                                "out_tokens_total": 0} for m in models}
     answers_by_task = {task["id"]: {} for task in tasks}
     scorer_by_task  = {task["id"]: task.get("scorer", "programmatic") for task in tasks}
@@ -493,17 +589,22 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
                 raw        = resp.choices[0].message.content
                 out_tokens = resp.usage.completion_tokens
 
-                s, detail = scoring.score(raw, task, embed=embed)
+                s, detail = scoring.score(raw, task, embed=embed, judge_client=judge_client)
 
                 per_model[mid]["lat"].append(lat)
-                per_model[mid]["score"]            += s
-                per_model[mid]["correct"]          += int(s >= 0.5)
+                if s is not None:
+                    per_model[mid]["score"]   += s
+                    per_model[mid]["score_n"] += 1
+                    per_model[mid]["correct"] += int(s >= 0.5)
                 per_model[mid]["out_tokens_total"] += out_tokens
+
+                if scorer_by_task[task["id"]] == "llm_judge" and mid == JUDGE_MODEL:
+                    detail = {**detail, "self_graded": True}
 
                 answers_by_task[task["id"]][mid] = {
                     "text":       raw,
-                    "correct":    s >= 0.5,
-                    "score":      round(s, 3),
+                    "correct":    s is not None and s >= 0.5,
+                    "score":      round(s, 3) if s is not None else None,
                     "latency_s":  round(lat, 3),
                     "out_tokens": out_tokens,
                     **detail,
