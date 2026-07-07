@@ -335,7 +335,12 @@ function renderMethods() {
       <span class="method-badge ${m.badge}">${SCORER_LABELS[m.id]}</span>
     </div>`).join("");
   document.querySelectorAll(".method-card").forEach(card =>
-    card.addEventListener("click", () => selectMethod(card.dataset.id))
+    card.addEventListener("click", () => {
+      selectedTask = null;
+      document.querySelectorAll(".example-chip").forEach(c => c.classList.remove("selected"));
+      updateRunButton();
+      selectMethod(card.dataset.id);
+    })
   );
 }
 
@@ -447,6 +452,28 @@ function renderBuilder(method) {
       document.getElementById("scale-preview").textContent = scaleInp.value;
     });
   }
+
+  // Invalidate selectedTask when user edits fields (JS .value= does NOT fire input, so
+  // populateBuilder won't trigger this).
+  function _invalidate() {
+    if (selectedTask === null) return;
+    selectedTask = null;
+    document.querySelectorAll(".example-chip").forEach(c => c.classList.remove("selected"));
+    updateRunButton();
+    updateBuildButton();
+  }
+  const _watched = ["b-instruction", "b-inputs"];
+  if (method === "programmatic")    _watched.push("b-answers", "b-compare");
+  if (method === "reference_match") _watched.push("b-references", "b-metric");
+  if (method === "llm_judge")       _watched.push("b-rubric", "b-scale");
+  _watched.forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener("input", _invalidate);
+    if (el.tagName === "SELECT" || el.type === "number") el.addEventListener("change", _invalidate);
+  });
+
+  updateBuildButton();
 }
 
 async function handleBuild() {
@@ -535,6 +562,7 @@ function showScorerCaveat(scorer, metric) {
 
 function selectBuiltin(id) {
   selectedTask = id;
+  updateRunButton();
   document.querySelectorAll(".example-chip").forEach(c =>
     c.classList.toggle("selected", c.dataset.id === id)
   );
@@ -580,6 +608,51 @@ const FAMILY_ORDER = [
 ];
 
 let selectionOrder = [];
+let running    = false;
+let _hintShown = false;
+
+function updateRunButton() {
+  const btn = document.getElementById("run-btn");
+  if (!btn) return;
+  btn.disabled = running || selectionOrder.length === 0 || !selectedTask;
+  if (!running) {
+    if (!selectedTask) {
+      if (!_hintShown) { setStatus("Build or select a dataset first."); _hintShown = true; }
+    } else if (_hintShown) {
+      setStatus(""); _hintShown = false;
+    }
+  }
+}
+
+function updateBuildButton() {
+  const btn = document.getElementById("build-btn");
+  const msg = document.getElementById("build-msg");
+  if (!btn) return;
+  const inputLines = (document.getElementById("b-inputs")?.value || "")
+    .split("\n").filter(s => s.trim());
+  let ok = inputLines.length >= 1;
+  let reason = ok ? "" : "Add at least one input";
+  if (ok) {
+    if (selectedMethod === "programmatic") {
+      const ans = (document.getElementById("b-answers")?.value || "").split("\n").filter(s => s.trim());
+      if (!ans.length) { ok = false; reason = "Add inputs and gold answers"; }
+    } else if (selectedMethod === "reference_match") {
+      const refs = (document.getElementById("b-references")?.value || "").split("\n").filter(s => s.trim());
+      if (!refs.length) { ok = false; reason = "Add inputs and reference answers"; }
+    } else if (selectedMethod === "llm_judge") {
+      if (!(document.getElementById("b-rubric")?.value || "").trim()) {
+        ok = false; reason = "Add inputs and a rubric";
+      }
+    }
+  }
+  btn.disabled = !ok;
+  if (!msg) return;
+  if (!ok && reason && !msg.classList.contains("ok") && !msg.classList.contains("err")) {
+    msg.className = "build-msg"; msg.textContent = reason;
+  } else if (ok && msg.className === "build-msg") {
+    msg.textContent = "";
+  }
+}
 
 function modelFamily(id) {
   const parts = id.split("/");
@@ -758,7 +831,7 @@ function updateSelCount() {
   });
   document.getElementById("sel-count").textContent =
     `${selectionOrder.length} / ${MAX_MODELS} selected`;
-  document.getElementById("run-btn").disabled = selectionOrder.length === 0;
+  updateRunButton();
 }
 
 function routingPlanHtml() {
@@ -862,8 +935,8 @@ document.getElementById("run-btn").addEventListener("click", async () => {
   const models = [...selectionOrder];
   if (!models.length) { setStatus("Select at least one model.", "err"); return; }
 
-  const btn = document.getElementById("run-btn");
-  btn.disabled = true;
+  running = true;
+  updateRunButton();
   setStatus('<span class="spinner"></span>Starting…');
 
   try {
@@ -882,15 +955,15 @@ document.getElementById("run-btn").addEventListener("click", async () => {
     startProgressPoll();
     await waitForDone();
   } catch(e) {
+    running = false;
     stopProgressPoll();
     updateDeployExplain(null);
     setStatus("Error: " + esc(e.message), "err");
-    btn.disabled = selectionOrder.length === 0;
+    updateRunButton();
   }
 });
 
 async function waitForDone() {
-  const btn = document.getElementById("run-btn");
   while (true) {
     await new Promise(r => setTimeout(r, 2000));
     let p;
@@ -900,9 +973,10 @@ async function waitForDone() {
     if (p.done && !p.running) {
       stopProgressPoll();
       updateDeployExplain(null);
+      running = false;
       if (p.error) {
         setStatus("Error: " + esc(p.error), "err");
-        btn.disabled = selectionOrder.length === 0;
+        updateRunButton();
         return;
       }
       try {
@@ -924,7 +998,7 @@ async function waitForDone() {
       } catch(e) {
         setStatus("Error loading results: " + esc(e.message), "err");
       }
-      btn.disabled = selectionOrder.length === 0;
+      updateRunButton();
       return;
     }
   }
