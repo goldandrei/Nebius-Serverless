@@ -267,6 +267,7 @@
       <p class="examples-label">or jump straight to a built-in example ↓</p>
       <div class="example-row" id="example-row"></div>
     </div>
+    <div id="scorer-caveat" style="display:none;margin-top:10px"></div>
   </div>
 
   <!-- ── model picker ───────────────────────────────────────── -->
@@ -506,6 +507,32 @@ function renderExamples(tasks) {
   );
 }
 
+const SCORER_CAVEATS = {
+  lexical: `⚠ <b>Lexical F1 scoring</b> — scores measure word-token overlap between the model output
+    and the reference answer. A response that uses different but correct wording scores lower
+    than one that mirrors the reference phrasing. Ranks may not reflect true quality.
+    Use <b>LLM-judge</b> for phrasing-insensitive evaluation.`,
+  embedding: `⚠ <b>Embedding-similarity scoring</b> — scores measure cosine distance between output
+    and reference embeddings. Semantically correct but differently phrased answers can score
+    lower than brief answers that happen to be close in embedding space.
+    Use <b>LLM-judge</b> for more robust evaluation.`,
+};
+
+function showScorerCaveat(scorer, metric) {
+  const el = document.getElementById("scorer-caveat");
+  if (!el) return;
+  const key = scorer === "reference_match" ? (metric || "lexical") : null;
+  const text = key ? SCORER_CAVEATS[key] : null;
+  if (text) {
+    el.style.display = "";
+    el.innerHTML = `<div style="padding:10px 14px;border:1px solid var(--amber);border-radius:8px;
+      font-family:var(--mono);font-size:11px;color:var(--amber);line-height:1.6">${text}</div>`;
+  } else {
+    el.style.display = "none";
+    el.innerHTML = "";
+  }
+}
+
 function selectBuiltin(id) {
   selectedTask = id;
   document.querySelectorAll(".example-chip").forEach(c =>
@@ -516,7 +543,10 @@ function selectBuiltin(id) {
   selectMethod(task.scorer);
   fetch(`/api/tasks/${id}`)
     .then(r => r.json())
-    .then(records => populateBuilder(records, task.scorer));
+    .then(records => {
+      populateBuilder(records, task.scorer);
+      showScorerCaveat(task.scorer, records[0]?.metric);
+    });
 }
 
 function populateBuilder(records, scorer) {
@@ -1004,20 +1034,9 @@ function renderResults(D) {
     ? `<p class="cost-note">Cost columns empty — add token prices to config/prices.yaml</p>`
     : "";
 
-  const hasEmbedding = D.samples && D.samples.some(
-    s => s.scorer === "reference_match" && Object.values(s.answers || {}).some(a => a.sim !== undefined)
-  );
-
-  const embedCaveat = hasEmbedding ? `
-    <div style="margin-top:12px;padding:10px 14px;border:1px solid var(--amber);border-radius:8px;
-                font-family:var(--mono);font-size:11px;color:var(--amber);line-height:1.6">
-      ⚠ <b>Embedding-similarity scoring</b> — scores measure cosine distance to a short
-      reference answer. Verbose-but-correct responses (longer phrasing, chain-of-thought)
-      score lower than brief answers that closely match the reference wording. Accuracy
-      ranks here may <b>not reflect true model quality</b> — a smaller model can
-      "win" simply by being terser. Use <b>LLM-judge</b> scoring for length-insensitive
-      evaluation of factual or open-ended tasks.
-    </div>` : "";
+  // update the persistent caveat in the picker (above the results)
+  const firstSample = D.samples && D.samples[0];
+  if (firstSample) showScorerCaveat(firstSample.scorer, firstSample.metric);
 
   document.getElementById("results-section").innerHTML = `
     <div class="results-section">
@@ -1038,7 +1057,6 @@ function renderResults(D) {
         </div>
         ${costNote}
         ${c1kFootnote}
-        ${embedCaveat}
       </div>
       <div class="two-col">
         <div class="panel" style="animation-delay:.05s">
