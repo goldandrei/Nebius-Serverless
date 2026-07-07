@@ -547,13 +547,24 @@ const SCORER_CAVEATS = {
   llm_judge: `⚠ <b>LLM-judge scoring</b> — scores are model-graded against your rubric and are
     inherently more subjective than programmatic scoring. A different judge model or rubric
     wording can shift scores; treat ranks as directional, not exact.`,
+  exact: `⚠ <b>Exact-match scoring</b> — the model's output (trimmed and lowercased) must equal the
+    gold answer exactly. A correct answer phrased differently than the gold text (e.g. "yes" vs
+    "affirmative") scores 0. Use <b>LLM-judge</b> if wording can vary.`,
+  numeric: `⚠ <b>Numeric scoring</b> — the first number found in the model's output is compared to the
+    gold value. Correct reasoning around it doesn't matter, but if the model states more than one
+    number, only the first one found is checked.`,
+  json_fields: `⚠ <b>JSON-fields scoring</b> — each field is compared to the gold value after
+    normalization (trim + lowercase); semantically equivalent but differently worded values
+    (e.g. "this weekend" vs "weekend") are penalized. Score is partial-credit F1 across fields,
+    not all-or-nothing.`,
 };
 
-function showScorerCaveat(scorer, metric) {
+function showScorerCaveat(scorer, detail) {
   const el = document.getElementById("scorer-caveat");
   if (!el) return;
-  const key = scorer === "reference_match" ? (metric || "lexical")
-            : scorer === "llm_judge" ? "llm_judge" : null;
+  const key = scorer === "reference_match" ? (detail || "lexical")
+            : scorer === "programmatic"    ? (detail || "exact")
+            : scorer === "llm_judge"       ? "llm_judge" : null;
   const text = key ? SCORER_CAVEATS[key] : null;
   if (text) {
     el.style.display = "";
@@ -578,7 +589,7 @@ function selectBuiltin(id) {
     .then(r => r.json())
     .then(records => {
       populateBuilder(records, task.scorer);
-      showScorerCaveat(task.scorer, records[0]?.metric);
+      showScorerCaveat(task.scorer, records[0]?.metric || records[0]?.compare);
     });
 }
 
@@ -839,21 +850,6 @@ function updateSelCount() {
   updateRunButton();
 }
 
-function routingPlanHtml() {
-  if (!selectionOrder.length) return "";
-  const ep = [], tf = [];
-  for (const mid of selectionOrder) {
-    const m    = _catalogMap[mid];
-    const name = esc(mid.split("/").pop());
-    if (m && m.basis === "hosted") tf.push(name);
-    else ep.push(name);
-  }
-  const parts = [];
-  if (ep.length) parts.push(ep.join(", ") + ` <span class="basis-tag basis-self">endpoint GPU</span>`);
-  if (tf.length) parts.push(tf.join(", ") + ` <span class="basis-tag basis-hosted">Token Factory</span>`);
-  return "Auto-routing: " + parts.join(" &nbsp;&middot;&nbsp; ");
-}
-
 // ── run ───────────────────────────────────────────────────────────────────────
 const STAGE_EXPLANATIONS = {
   PROVISIONING: "Allocating a GPU from Nebius — this is the queue step and the most variable part.",
@@ -1025,11 +1021,6 @@ function renderResults(D) {
   };
   document.getElementById("eyebrow").textContent =
     MODE_LABEL[D.meta.mode] || `Nebius · ${D.meta.mode}`;
-  const routing  = D.meta.routing;
-  const routeMeta = routing
-    ? ` &middot; <b>${routing.endpoint.length}</b> endpoint + <b>${routing.tokenfactory.length}</b> Token Factory`
-    : ` &middot; mode <b>${esc(D.meta.mode)}</b>`;
-
   const isJudge   = D.meta.scorer === "llm_judge";
   const hasSelf   = lb.some(r => r.cost_basis === "self-hosted");
   const hasHosted = lb.some(r => r.cost_basis === "hosted");
@@ -1115,7 +1106,7 @@ function renderResults(D) {
 
   // update the persistent caveat in the picker (above the results)
   const firstSample = D.samples && D.samples[0];
-  if (firstSample) showScorerCaveat(firstSample.scorer, firstSample.metric);
+  if (firstSample) showScorerCaveat(firstSample.scorer, firstSample.metric || firstSample.compare);
 
   const judgeHeader = isJudge && D.meta.judge_model
     ? `<p class="meta-line" style="margin-bottom:10px">Graded by <b>${esc(D.meta.judge_model)}</b>
@@ -1314,6 +1305,19 @@ async function init() {
     renderExamples(tasks);
     renderPicker(catalog, selection);
     if (tasks.length) selectBuiltin(tasks[0].id);
+
+    // A run may still be going server-side from before a page refresh — resume
+    // watching it instead of leaving the dashboard looking idle.
+    try {
+      const p = await fetch("/api/progress").then(r => r.json());
+      if (p.running && !p.done) {
+        running = true;
+        updateRunButton();
+        setStatus('<span class="spinner"></span>Resuming in-progress run…');
+        startProgressPoll();
+        await waitForDone();
+      }
+    } catch(e) { /* best-effort — don't block init on this */ }
   } catch(e) {
     document.getElementById("catalog-area").innerHTML =
       `<p class="empty">Start the server: <code>py -3 scripts/server.py</code></p>`;

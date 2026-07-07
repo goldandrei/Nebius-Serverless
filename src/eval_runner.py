@@ -8,7 +8,6 @@ from pathlib import Path
 import yaml
 
 from src import scoring
-from src.cost import cost_per_1k_tokens, endpoint_cost
 
 ROOT          = Path(__file__).resolve().parent.parent
 DATA_DIR      = ROOT / "data"
@@ -385,7 +384,8 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
     for j, task in enumerate(tasks):
         scorer_name = task.get("scorer", "programmatic")
         row = {"q": task["input"], "expected": task_expected(task),
-               "scorer": scorer_name, "answers": {}}
+               "scorer": scorer_name, "compare": task.get("compare"),
+               "metric": task.get("metric"), "answers": {}}
 
         for i, m in enumerate(models):
             mid  = m[mid_key]
@@ -666,6 +666,8 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
             "q":        task["input"],
             "expected": task_expected(task),
             "scorer":   scorer_by_task[task["id"]],
+            "compare":  task.get("compare"),
+            "metric":   task.get("metric"),
             "answers":  answers_by_task[task["id"]],
         })
 

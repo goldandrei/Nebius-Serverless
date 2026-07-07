@@ -1,5 +1,5 @@
 # Updated by dashboard picker.
 compare:
-  - deepseek-ai/DeepSeek-V4-Pro
   - Qwen/Qwen3-32B
   - google/gemma-3-27b-it
+  - meta-llama/Llama-3.3-70B-Instruct
