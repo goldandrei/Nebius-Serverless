@@ -347,9 +347,12 @@ if __name__ == "__main__":
 
     # ── startup banner — shows git SHA so stale-process issues are obvious ────
     import subprocess as _sp
-    _r = _sp.run(["git", "rev-parse", "--short", "HEAD"],
-                  cwd=str(ROOT), capture_output=True, text=True)
-    _sha = _r.stdout.strip() if _r.returncode == 0 else "unknown"
+    try:
+        _r = _sp.run(["git", "rev-parse", "--short", "HEAD"],
+                      cwd=str(ROOT), capture_output=True, text=True)
+        _sha = _r.stdout.strip() if _r.returncode == 0 else "unknown"
+    except FileNotFoundError:
+        _sha = "unknown"
     print(f"  [server] git={_sha}  (restart server after every code change)")
     # Confirm the key runtime parameters so we can verify without deploying
     from src.orchestrator import create_endpoint as _ce, wait_ready as _wr
@@ -361,7 +364,7 @@ if __name__ == "__main__":
     print(f"  [server] create_endpoint defaults: max_model_len={_mml}")
     print(f"  [server] wait_ready: PROVISIONING≤per-model ({_pto//60}m default, 40m for 4×GPU) "
           f"STARTING≤5m RUNNING≤per-model ({_lto//60}m default)")
-    del _sp, _r, _sha, _ce, _wr, _ins, _wr_sig, _mml, _lto, _pto
+    del _sp, _sha, _ce, _wr, _ins, _wr_sig, _mml, _lto, _pto
     # ─────────────────────────────────────────────────────────────────────────
 
     print("\nLoading prices...")
