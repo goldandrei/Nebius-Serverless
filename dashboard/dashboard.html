@@ -123,8 +123,27 @@
   /* model picker */
   .fam-label{font-family:var(--mono);font-size:10px;letter-spacing:.14em;
              text-transform:uppercase;color:var(--faint);
-             padding:10px 0 6px;border-top:1px solid var(--panel2);margin-top:8px}
+             padding:10px 0 6px;border-top:1px solid var(--panel2);margin-top:8px;
+             cursor:pointer;user-select:none;
+             display:flex;align-items:center;justify-content:space-between}
+  .fam-label:hover{color:var(--dim)}
   .fam-label:first-child{border-top:none;margin-top:0;padding-top:0}
+  .fam-sel{color:var(--cyan);letter-spacing:normal;text-transform:none}
+  .fam-toggle{display:inline-flex;align-items:center;justify-content:center;
+              width:22px;height:22px;flex-shrink:0;border-radius:6px;
+              border:1px solid var(--line);background:var(--panel2);
+              color:var(--dim);font-size:12px;line-height:1;
+              transition:transform .25s cubic-bezier(.4,0,.2,1),
+                         border-color .15s,color .15s,background .15s}
+  .fam-label:hover .fam-toggle{border-color:var(--cyan);color:var(--cyan);
+              background:rgba(77,210,196,.08)}
+  .fam-toggle.collapsed{transform:rotate(-90deg)}
+  .fam-collapse{display:grid;grid-template-rows:1fr;
+                transition:grid-template-rows .28s cubic-bezier(.4,0,.2,1)}
+  .fam-collapse.collapsed{grid-template-rows:0fr}
+  .fam-collapse > .model-grid{overflow:hidden;min-height:0;
+              transition:opacity .2s ease}
+  .fam-collapse.collapsed > .model-grid{opacity:0}
   .model-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:6px;
               margin-bottom:4px}
   .model-item{display:flex;align-items:center;gap:10px;padding:8px 10px;
@@ -718,6 +737,12 @@ function basisTagFor(m) {
   return `<span class="basis-tag ${cls}">${lbl}</span>`;
 }
 
+function toggleFamily(el) {
+  const grid = el.nextElementSibling;
+  const collapsed = grid.classList.toggle("collapsed");
+  el.querySelector(".fam-toggle").classList.toggle("collapsed", collapsed);
+}
+
 function renderModelSection(models, selSet, basis) {
   const groups = {};
   for (const m of models) {
@@ -726,7 +751,10 @@ function renderModelSection(models, selSet, basis) {
   }
   let html = "";
   for (const fam of FAMILY_ORDER.filter(f => groups[f])) {
-    html += `<div class="fam-label">${fam}</div><div class="model-grid">`;
+    html += `<div class="fam-label" onclick="toggleFamily(this)">
+      <span>${fam}</span>
+      <span style="display:flex;align-items:center;gap:8px"><span class="fam-sel-badge"></span><span class="fam-toggle">▾</span></span>
+    </div><div class="fam-collapse"><div class="model-grid">`;
     for (const m of groups[fam]) {
       const name    = m.id.split("/")[1] || m.id;
       const checked = selSet.has(m.id) ? "checked" : "";
@@ -741,7 +769,7 @@ function renderModelSection(models, selSet, basis) {
         </span>
       </label>`;
     }
-    html += "</div>";
+    html += "</div></div>";
   }
   return html;
 }
@@ -847,7 +875,19 @@ function updateSelCount() {
   });
   document.getElementById("sel-count").textContent =
     `${selectionOrder.length} / ${MAX_MODELS} selected`;
+  updateFamilyCounts();
   updateRunButton();
+}
+
+function updateFamilyCounts() {
+  document.querySelectorAll(".fam-label").forEach(label => {
+    const grid  = label.nextElementSibling;
+    const badge = label.querySelector(".fam-sel-badge");
+    if (!grid || !badge) return;
+    const n = grid.querySelectorAll(".model-check:checked").length;
+    badge.textContent = n ? `${n} selected` : "";
+    badge.className = "fam-sel-badge" + (n ? " fam-sel" : "");
+  });
 }
 
 // ── run ───────────────────────────────────────────────────────────────────────
