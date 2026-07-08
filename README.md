@@ -10,6 +10,26 @@ models, and get a leaderboard with accuracy, latency, and cost.
 *Leaderboard, score-vs-cost and latency charts, and per-sample answers after
 comparing three models on the NL → JSON Command task.*
 
+## Why this exists
+
+Public benchmark leaderboards rank models on generic tasks, and those rankings
+shift constantly. But a model that sits *lower* on a public chart can easily be
+the better choice for **your** data — the benchmark never saw your prompts, your
+formats, or your quality bar. The only way to know which model is actually best
+for your use case is to test them on your own data.
+
+That's what this dashboard is for. Bring your own tasks, run several models
+against them, and get a like-for-like comparison on the three things that
+actually decide a deployment:
+
+- **Quality** — did it get the answer right on *your* data, under *your* scorer.
+- **Latency** — how fast it responds.
+- **Cost / value** — what you pay for that quality.
+
+A cheaper, "lower-ranked" model that nails your task at a fraction of the cost
+often beats the headline leader. This tool is how you find out — on real
+infrastructure, with real numbers.
+
 ## Backends
 
 Each model is routed automatically by its catalog entry — a single comparison
@@ -46,6 +66,111 @@ token.*
 *Picking a scoring method and entering data in the dataset builder — here,
 programmatic scoring with json_fields comparison.*
 
+## Getting started
+
+### 1. Clone
+
+```bash
+git clone https://github.com/goldandrei/Nebius-Serverless.git
+cd Nebius-Serverless
+```
+
+### 2. Install dependencies
+
+Python 3.10 or newer is required. Install the Python packages:
+
+```bash
+pip install -r requirements.txt
+```
+
+That pulls `openai`, `pyyaml`, `boto3`, `requests`, and `python-dotenv`.
+(Alternatively, if you have [`uv`](https://docs.astral.sh/uv/), `make serve`
+installs these automatically in an ephemeral environment — you can skip the
+`pip install` step entirely.)
+
+**Self-hosted models only:** to compare any `self-hosted` (endpoint) model, you
+also need the [Nebius CLI](https://docs.nebius.com/cli) installed and
+authenticated — the harness shells out to it to provision and tear down GPU
+endpoints. On Linux/macOS it must be on your `PATH` as `nebius`; on Windows it
+runs inside WSL (the harness calls `~/.nebius/bin/nebius` via WSL). If you only
+compare hosted (Token Factory) models, you can skip the CLI completely.
+
+### 3. Configure `.env`
+
+Copy the template and fill it in:
+
+```bash
+cp .env.example .env
+```
+
+| Variable | Needed for | What it is |
+|----------|-----------|------------|
+| `NEBIUS_API_KEY` | **Always** | Your Token Factory API key. Used for hosted inference, embedding scoring, and the LLM judge. Get it from the Nebius console. |
+| `NEBIUS_BASE_URL` | **Always** (pre-filled) | Token Factory API base URL. The example already contains the correct value — leave it as is. |
+| `NEBIUS_PROJECT_ID` | Self-hosted only | The Nebius project the harness creates GPU endpoints in. |
+| `NEBIUS_SUBNET_ID` | Self-hosted only | The VPC subnet those endpoints attach to. |
+| `NEBIUS_REGION` | Self-hosted only (default `eu-north1`) | Region for endpoint deployment. |
+| `HF_TOKEN` | Optional | Hugging Face token — only for gated models you self-host (see below). |
+| `JUDGE_MODEL` | Optional | Judge model for `llm_judge` tasks. Defaults to `deepseek-ai/DeepSeek-V4-Pro`. |
+
+**Minimum to get running:** for a hosted-only comparison you only need
+`NEBIUS_API_KEY` (plus the pre-filled `NEBIUS_BASE_URL`). Everything else is for
+self-hosting. `.env` is gitignored — never commit it.
+
+### 4. The Hugging Face token
+
+`HF_TOKEN` is **optional** and only matters in one specific case.
+
+- **You do NOT need it** for Token Factory (`hosted`) models — Nebius hosts the
+  weights — or for self-hosting open models that aren't gated.
+- **You DO need it** when you self-host a **gated** model (e.g. Llama, some
+  Gemma variants). A self-hosted endpoint pulls the weights from Hugging Face at
+  deploy time, and gated repos require you to (1) accept the model's license on
+  huggingface.co and (2) supply an `HF_TOKEN` so vLLM can download them. Without
+  it, the deploy fails with a 403 / auth error.
+
+If you're only using hosted or non-gated models, leave `HF_TOKEN` blank.
+
+### 5. Run the server
+
+There is a **single** local server — it serves both the dashboard UI and the
+`/api/*` routes, so there's nothing else to start:
+
+```bash
+python scripts/server.py          # default port 7860
+python scripts/server.py 8080     # or pick a port
+# or, with uv:
+make serve
+```
+
+Then open **http://localhost:7860**. On startup the server prints its git SHA
+so you can tell fresh code from stale — restart it after any code change.
+
+If a Serverless Endpoint deploy fails, is interrupted, or you close the tab
+mid-run, `make clean` (or `bash scripts/cleanup.sh`) deletes any endpoints still
+billing under the `eval-` name prefix.
+
+### 6. Use the dashboard
+
+1. **Choose a scoring method** — Programmatic, Reference match, or LLM judge.
+   Or click a **built-in example** to jump straight to a ready-made dataset and
+   skip steps 2–3.
+2. **Enter your data** — an instruction, inputs (one per line), and the matching
+   answer column: gold answers (programmatic), reference answers (reference
+   match), or a rubric + scale (LLM judge).
+3. **Build the dataset** — click *Build dataset* to save your inputs as the task
+   to run. (Built-in examples are already built, so this is skipped.) The button
+   stays disabled until the form has enough to build.
+4. **Pick up to 3 models** — from the model picker; hosted and self-hosted
+   models are grouped, each showing its per-token price or GPU hourly rate. A
+   comparison can mix both backends.
+5. **Run the comparison** — *Run comparison* stays disabled until a dataset is
+   built/selected and at least one model is chosen. Hosted models respond
+   immediately; self-hosted models provision a GPU first (5–20 min).
+6. **Read the results** — a leaderboard with accuracy, latency, and cost;
+   score-vs-cost and latency charts; and every per-sample answer (with the
+   judge's reasoning when you use LLM judge).
+
 ## What this demonstrates
 
 - **Deploy tax is real and capacity-dependent** — self-hosted endpoints take
@@ -62,40 +187,6 @@ programmatic scoring with json_fields comparison.*
   rankings, so the dashboard flags it as a caveat.
 - **LLM-judge cost is tracked separately** from the models being compared —
   it's meta-evaluation cost, not a contestant's cost.
-
-## Setup
-
-**Prerequisites:**
-- Python 3.10 or newer.
-- For self-hosted (endpoint) models only: the Nebius CLI must be installed
-  and authenticated (the harness calls it to provision and tear down GPU
-  endpoints). On Windows it runs via WSL. Not needed if you only compare
-  hosted (Token Factory) models.
-
-```bash
-cp .env.example .env
-# fill in NEBIUS_API_KEY, NEBIUS_PROJECT_ID, NEBIUS_SUBNET_ID, NEBIUS_REGION
-# HF_TOKEN only needed for gated models you self-host
-pip install -r requirements.txt
-```
-
-`NEBIUS_API_KEY` is required for both backends (Token Factory inference and
-the embedding/judge scorers). `NEBIUS_PROJECT_ID`/`NEBIUS_SUBNET_ID` are only
-needed if you compare any self-hosted (endpoint) models.
-
-## Running
-
-```bash
-make serve
-# or: python scripts/server.py [port]
-```
-
-Open `http://localhost:7860`. Pick a scoring method and enter data (or click
-a built-in example), select up to 3 models, click **Run comparison**.
-
-If a Serverless Endpoint deploy fails, is interrupted, or you close the tab
-mid-run, `make clean` (or `scripts/cleanup.sh`) deletes any endpoints still
-billing under the `eval-` name prefix.
 
 ## Project layout
 
