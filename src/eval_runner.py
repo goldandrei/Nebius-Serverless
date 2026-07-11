@@ -329,6 +329,9 @@ def _build_leaderboard(models, per_model, mid_key, n_tasks):
             "n":                       n_tasks,
             "mean_latency_s":          round(statistics.mean(d["lat"]), 3),
             "p95_latency_s":           round(p95, 3),
+            "total_in_tokens":         d.get("in_tokens_total", 0),
+            "total_out_tokens":        d.get("out_tokens_total", 0),
+            "rate_hr":                 d.get("rate_hr"),
             "cost_per_1k_tokens_usd":  round(statistics.mean(d["cost_per_1k"]), 5),
             "total_run_cost_usd":      round(sum(d["req_cost"]), 5),
         }
@@ -463,6 +466,8 @@ def _run_tokenfactory(tasks, models, task_label, first_scorer, task_file,
             "p95_latency_s":          round(p95, 3),
             "total_in_tokens":        total_in,
             "total_out_tokens":       total_out,
+            "price_in_per_1m":        p_in,
+            "price_out_per_1m":       p_out,
             "cost_per_1k_tokens_usd": round(c1k, 6) if c1k is not None else None,
             "total_run_cost_usd":     round(run_cost, 6) if run_cost is not None else None,
         })
@@ -519,7 +524,7 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
 
     per_model = {m[mid_key]: {"lat": [], "cost_per_1k": [], "req_cost": [],
                                "score": 0.0, "score_n": 0, "correct": 0,
-                               "out_tokens_total": 0} for m in models}
+                               "in_tokens_total": 0, "out_tokens_total": 0} for m in models}
     answers_by_task = {task["id"]: {} for task in tasks}
     scorer_by_task  = {task["id"]: task.get("scorer", "programmatic") for task in tasks}
 
@@ -588,6 +593,7 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
                 )
                 lat        = time.time() - t0
                 raw        = resp.choices[0].message.content
+                in_tokens  = resp.usage.prompt_tokens
                 out_tokens = resp.usage.completion_tokens
 
                 s, detail = scoring.score(raw, task, embed=embed, judge_client=judge_client)
@@ -597,6 +603,7 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
                     per_model[mid]["score"]   += s
                     per_model[mid]["score_n"] += 1
                     per_model[mid]["correct"] += int(s >= 0.5)
+                per_model[mid]["in_tokens_total"]  += in_tokens
                 per_model[mid]["out_tokens_total"] += out_tokens
 
                 if scorer_by_task[task["id"]] == "llm_judge" and mid == JUDGE_MODEL:
@@ -607,6 +614,7 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
                     "correct":    s is not None and s >= 0.5,
                     "score":      round(s, 3) if s is not None else None,
                     "latency_s":  round(lat, 3),
+                    "in_tokens":  in_tokens,
                     "out_tokens": out_tokens,
                     **detail,
                 }
@@ -642,6 +650,7 @@ def _run_endpoint(tasks, models, task_label, first_scorer, task_file, progress_c
         c1k          = eval_cost / total_out * 1000
 
         per_model[mid].update({
+            "rate_hr":      rate_hr,
             "t_created":    t_created,
             "t_ready":      t_ready,
             "t_eval_done":  t_eval_done,
