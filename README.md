@@ -91,9 +91,21 @@ installs these automatically in an ephemeral environment — you can skip the
 **Self-hosted models only:** to compare any `self-hosted` (endpoint) model, you
 also need the [Nebius CLI](https://docs.nebius.com/cli) installed and
 authenticated — the harness shells out to it to provision and tear down GPU
-endpoints. On Linux/macOS it must be on your `PATH` as `nebius`; on Windows it
-runs inside WSL (the harness calls `~/.nebius/bin/nebius` via WSL). If you only
-compare hosted (Token Factory) models, you can skip the CLI completely.
+endpoints. If you only compare hosted (Token Factory) models, you can skip
+the CLI completely.
+
+- **Linux/macOS:** install the CLI so `nebius` is on your `PATH`.
+- **Windows:** the harness always runs the CLI inside WSL, never natively on
+  Windows (`wsl bash -c "~/.nebius/bin/nebius ..."`). If you don't already have
+  WSL set up:
+  ```powershell
+  wsl --install
+  ```
+  This installs WSL2 with Ubuntu as the default distro (reboot if prompted).
+  Then open the Ubuntu shell (`wsl` from PowerShell, or launch it from the
+  Start menu) and install the Nebius CLI *inside that Linux environment*,
+  following the same [Nebius CLI docs](https://docs.nebius.com/cli) — the
+  harness expects it at `~/.nebius/bin/nebius` in your default WSL distro.
 
 ### 3. Configure `.env`
 
