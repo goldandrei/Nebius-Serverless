@@ -227,6 +227,8 @@ https://medium.com/@goldenbergandrei/the-best-model-on-the-leaderboard-isnt-alwa
 
 [
 ](https://medium.com/@goldenbergandrei/the-best-model-on-the-leaderboard-isnt-always-the-best-model-for-you-9ffbd652e838)
+
+https://www.youtube.com/watch?v=tXwwSxmTYFk
 ## License
 
 MIT — see `LICENSE`.
