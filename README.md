@@ -223,6 +223,10 @@ Add an entry to `config/catalog.yaml` with `id`, `basis` (`hosted` or
 `config/prices.yaml` — prices are a manual snapshot (Token Factory has no
 public pricing API), never guessed.
 
+https://medium.com/@goldenbergandrei/the-best-model-on-the-leaderboard-isnt-always-the-best-model-for-you-9ffbd652e838
+
+[
+](https://medium.com/@goldenbergandrei/the-best-model-on-the-leaderboard-isnt-always-the-best-model-for-you-9ffbd652e838)
 ## License
 
 MIT — see `LICENSE`.
