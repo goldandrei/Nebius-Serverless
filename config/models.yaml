@@ -1,5 +1,5 @@
 # Updated by dashboard picker.
 compare:
   - Qwen/Qwen3-32B
-  - google/gemma-3-27b-it
   - meta-llama/Llama-3.3-70B-Instruct
+  - Qwen/Qwen2.5-0.5B-Instruct

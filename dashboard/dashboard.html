@@ -246,7 +246,7 @@
   .samples-tbl tr:last-child td{border-bottom:none}
   .samples-tbl tr:hover td{background:rgba(255,255,255,.02)}
   .s-idx{color:var(--faint);font-size:11px;text-align:right}
-  .s-input{color:var(--txt);max-width:220px;word-break:break-word;line-height:1.45}
+  .s-input{color:var(--txt);max-width:220px;word-break:break-word;line-height:1.45;white-space:normal}
   .s-expected{color:var(--dim);max-width:160px;word-break:break-word;
     font-size:11px;line-height:1.45}
   .s-answer{max-width:200px}
@@ -1070,7 +1070,9 @@ async function waitForDone() {
 function renderResults(D) {
   const lb = D.leaderboard;
   if (!lb || !lb.length) {
-    document.getElementById("results-section").innerHTML =
+    const emptyEl = document.getElementById("results-section");
+    emptyEl.innerHTML = "";
+    emptyEl.innerHTML =
       `<div style="margin-top:20px"><p class="empty">No results.</p></div>`;
     return;
   }
@@ -1206,7 +1208,9 @@ function renderResults(D) {
       </p>`
     : "";
 
-  document.getElementById("results-section").innerHTML = `
+  const resultsEl = document.getElementById("results-section");
+  resultsEl.innerHTML = "";
+  resultsEl.innerHTML = `
     <div class="results-section">
       <div class="panel" style="animation-delay:.02s;margin-top:0">
         <p class="plabel">Leaderboard &mdash; ${esc(D.meta.task_name)}</p>
@@ -1294,7 +1298,7 @@ function buildSamples(D) {
     return `<tr>
       <td class="s-idx">${ri + 1}</td>
       <td class="l s-input">${esc(row.q)}</td>
-      <td class="l s-expected"><span class="s-text" title="Click to expand" onclick="this.classList.toggle('expanded');this.title=this.classList.contains('expanded')?'Click to collapse':'Click to expand'">${esc(String(row.expected))}</span></td>
+      <td class="l s-expected"><div class="s-text" title="Click to expand" onclick="this.classList.toggle('expanded');this.title=this.classList.contains('expanded')?'Click to collapse':'Click to expand'">${esc(String(row.expected))}</div></td>
       ${answerCells}
     </tr>`;
   }).join("");

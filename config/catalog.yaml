@@ -107,8 +107,10 @@ models:
     instance_type: 1gpu-8vcpu-32gb
     rate_hr: 1.82
 
-  # ── Llama 3.2 (non-gated) ────────────────────────────────────────────────────
+  # ── Llama 3.2 ─────────────────────────────────────────────────────────────────
+  # gated: verified against huggingface.co/api/models/{id} on 2026-08-03
   - id: meta-llama/Llama-3.2-1B-Instruct
+    gated: true
     tokenfactory_ok: false
     basis: self-hosted
     preset: gpu-l40s-a
@@ -116,6 +118,7 @@ models:
     rate_hr: 1.82
 
   - id: meta-llama/Llama-3.2-3B-Instruct
+    gated: true
     tokenfactory_ok: false
     basis: self-hosted
     preset: gpu-l40s-a
@@ -169,7 +172,9 @@ models:
     load_timeout_s: 900  # 15 min — ~93 GB MoE weights on single H200
 
   # ── Gemma 2 ───────────────────────────────────────────────────────────────────
+  # gated: verified against huggingface.co/api/models/{id} on 2026-08-03
   - id: google/gemma-2-2b-it
+    gated: true
     tokenfactory_ok: false
     basis: self-hosted
     preset: gpu-l40s-a
@@ -177,6 +182,7 @@ models:
     rate_hr: 1.82
 
   - id: google/gemma-2-9b-it
+    gated: true
     tokenfactory_ok: false
     basis: self-hosted
     preset: gpu-l40s-a
@@ -184,6 +190,7 @@ models:
     rate_hr: 1.82
 
   - id: google/gemma-2-27b-it
+    gated: true
     tokenfactory_ok: false
     basis: self-hosted
     preset: gpu-h100-sxm
@@ -192,6 +199,7 @@ models:
     load_timeout_s: 600  # 10 min — 54 GB weights on H100
 
   - id: google/gemma-3-27b-it
+    gated: true
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory
@@ -361,6 +369,12 @@ models:
     preset: token-factory
     instance_type: hosted-api
 
+  - id: MiniMaxAI/MiniMax-M3
+    tokenfactory_ok: true
+    basis: hosted
+    preset: token-factory
+    instance_type: hosted-api
+
   # ── Token Factory: GLM ───────────────────────────────────────────────────────
   - id: zai-org/GLM-5.1
     tokenfactory_ok: true
@@ -383,6 +397,12 @@ models:
     instance_type: hosted-api
 
   - id: moonshotai/Kimi-K2.7-Code
+    tokenfactory_ok: true
+    basis: hosted
+    preset: token-factory
+    instance_type: hosted-api
+
+  - id: moonshotai/Kimi-K3
     tokenfactory_ok: true
     basis: hosted
     preset: token-factory

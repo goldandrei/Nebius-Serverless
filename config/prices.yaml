@@ -13,7 +13,7 @@
 #   vision: true    — accepts image inputs (text-task comparisons may exclude)
 #   reasoning: true — extended thinking/reasoning (higher output cost per token)
 #   embedding: true — embedding model (scorer use only; not for text inference)
-prices_as_of: "2026-07-03"
+prices_as_of: "2026-08-03"
 source: "Token Factory console — Public endpoints (per 1M tokens)"
 
 tokenfactory:
@@ -108,6 +108,10 @@ tokenfactory:
     price_in_per_1m:  0.30
     price_out_per_1m: 1.20
 
+  MiniMaxAI/MiniMax-M3:
+    price_in_per_1m:  0.30
+    price_out_per_1m: 1.20
+
   # ── GLM ───────────────────────────────────────────────────────────────────────
   zai-org/GLM-5.1:
     price_in_per_1m:  1.40
@@ -126,6 +130,10 @@ tokenfactory:
   moonshotai/Kimi-K2.7-Code:
     price_in_per_1m:  0.95
     price_out_per_1m: 4.00
+
+  moonshotai/Kimi-K3:
+    price_in_per_1m:  3.00
+    price_out_per_1m: 15.00
 
   # ── DeepSeek ─────────────────────────────────────────────────────────────────
   deepseek-ai/DeepSeek-V4-Pro:
